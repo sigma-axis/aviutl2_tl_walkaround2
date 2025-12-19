@@ -6,7 +6,7 @@
 
 [ダウンロードはこちら．](https://github.com/sigma-axis/aviutl2_tl_walkaround2/releases) \[紹介動画準備中．\]
 
-TODO: demo here.
+![タイムラインの現在フレームカーソルが編集点移動するデモ](https://github.com/user-attachments/assets/7192994f-8250-4ab0-ae71-ec1acd8c395a)
 
 - AviUtl (無印) のプラグイン[「TLショトカ移動」](https://github.com/sigma-axis/aviutl_tl_walkaround)の AviUtl2 版として作成しました．一部機能は実装できていませんが，追加機能もあります．
 
