@@ -18,6 +18,10 @@
 
   - `beta24a` で動作確認済み．
 
+- Visual C++ 再頒布可能パッケージ (v14 の x64 版が必要)
+
+  https://learn.microsoft.com/ja-jp/cpp/windows/latest-supported-vc-redist
+
 ## 導入方法
 
 `tl_walkaround2.aux2` ファイルに対して，以下のいずれかの操作をしてください．
