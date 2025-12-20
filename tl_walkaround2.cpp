@@ -1583,7 +1583,7 @@ extern "C" __declspec(dllexport) bool InitializePlugin(DWORD version)
 
 // register.
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.10-beta1 (for beta25)"
+#define PLUGIN_VERSION	"v1.10 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name " " ver " by " author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
