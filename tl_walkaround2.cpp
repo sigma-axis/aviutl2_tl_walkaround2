@@ -42,7 +42,7 @@ constinit struct Settings {
 #define decl_prop(type, name, def)	\
 	type name = name##_def; \
 	constexpr static type name##_def = (def); \
-	constexpr static std::wstring_view name##_key = L#name
+	constexpr static std::wstring_view name##_key = L###name
 #define decl_prop_minmax(type, name, def, min, max)	\
 	decl_prop(type, name, def); \
 	constexpr static type name##_min = (min), name##_max = (max);
