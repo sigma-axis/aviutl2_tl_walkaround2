@@ -32,6 +32,15 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include "plugin2.h"
 #include "logger2.h"
 
+
+////////////////////////////////
+// plugin info.
+////////////////////////////////
+#define PLUGIN_NAME		L"TLショトカ移動2"
+#define PLUGIN_VERSION	"v1.20-beta1 (for beta25)"
+#define PLUGIN_AUTHOR	"sigma-axis"
+
+
 ////////////////////////////////
 // globals.
 ////////////////////////////////
@@ -1335,7 +1344,7 @@ static void on_load_project(PROJECT_FILE* project)
 ////////////////////////////////
 // define menu items.
 ////////////////////////////////
-#define NAME(name)	L"TLショトカ移動2\\" name
+#define NAME(name)	PLUGIN_NAME "\\" name
 constexpr struct {
 	wchar_t const* name;
 	void (*callback)(EDIT_SECTION* edit);
@@ -1609,9 +1618,6 @@ extern "C" __declspec(dllexport) bool InitializePlugin(DWORD version)
 }
 
 // register.
-#define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.20-beta1 (for beta25)"
-#define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name " " ver " by " author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
 extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
