@@ -1190,6 +1190,23 @@ static void focus_cursor_object_rev(EDIT_SECTION* edit)
 	} while (layer != layer_end);
 }
 
+static void focus_left_right_object(EDIT_SECTION* edit, bool right)
+{
+	OBJECT_HANDLE target_obj;
+	auto const curr_obj = edit->get_focus_object();
+	if (curr_obj == nullptr) {
+		// focus the object at the current layer/frame position.
+		target_obj = edit->find_object(edit->info->layer, edit->info->frame);
+	}
+	else {
+		auto const pos = edit->get_object_layer_frame(curr_obj);
+		target_obj = right ? edit->find_object(pos.layer, pos.end + 1) :
+			std::get<0>(find_prev_obj(edit, pos.layer, pos.start - 1));
+	}
+
+	if (target_obj != nullptr) edit->set_focus_object(target_obj);
+}
+
 static void focus_above_below_layer_object(EDIT_SECTION* edit, bool below)
 {
 	int const layer_end = below ? edit->info->layer_max + 1 : -1, layer_delta = below ? +1 : -1;
@@ -1460,6 +1477,16 @@ constexpr struct {
 	{ NAME(L"選択レイヤーへスクロール"), &scroll_vert_to_selected },
 
 	{ NAME(L"現在フレームのオブジェクトを選択(逆順)"), &focus_cursor_object_rev },
+	{ NAME(L"左のオブジェクトを選択"), [](EDIT_SECTION* edit)
+	{
+		focus_left_right_object(edit, false);
+	}
+	},
+	{ NAME(L"右のオブジェクトを選択"), [](EDIT_SECTION* edit)
+	{
+		focus_left_right_object(edit, true);
+	}
+	},
 	{ NAME(L"上のオブジェクトを選択"), [](EDIT_SECTION* edit)
 	{
 		focus_above_below_layer_object(edit, false);
@@ -1583,7 +1610,7 @@ extern "C" __declspec(dllexport) bool InitializePlugin(DWORD version)
 
 // register.
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.10 (for beta25)"
+#define PLUGIN_VERSION	"v1.20-beta1 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name " " ver " by " author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
