@@ -51,6 +51,7 @@ constinit struct Settings {
 		decl_prop_minmax(double, page_rate, 0.25, 0.01, 1.0);
 		decl_prop_minmax(int, bpm_grid_div, 4, 1, 16);
 		decl_prop(bool, suppress_shift, false);
+		decl_prop(bool, focus_follows, false);
 
 		constexpr static std::wstring_view section = L"search";
 	} search{};
@@ -120,6 +121,7 @@ public:
 		read_double	(search, page_rate);
 		read_int	(search, bpm_grid_div);
 		read_bool	(search, suppress_shift);
+		read_bool	(search, focus_follows);
 
 		read_int	(cursor_undo, queue_size);
 		read_double	(cursor_undo, polling_period);
@@ -140,6 +142,7 @@ public:
 		write_val	(search, page_rate, , L"%.3f");
 		write_int	(search, bpm_grid_div);
 		write_bool	(search, suppress_shift);
+		write_bool	(search, focus_follows);
 
 		// even though cursor_undo can't change during runtime, save it
 		// so missing .ini file will be fully generated.
@@ -262,6 +265,7 @@ private:
 			bpm_div_spin,
 
 			suppress_shift_check,
+			focus_follows_check,
 
 			timer_cursor_poll,
 		};
@@ -288,6 +292,9 @@ private:
 		struct {
 			HWND check = nullptr;
 		} suppress_shift{};
+		struct {
+			HWND check = nullptr;
+		} focus_follows{};
 		HFONT gui_font = nullptr;
 		bool initialized() const { return gui_font != nullptr; }
 
@@ -336,6 +343,10 @@ private:
 			// suppress-shift control.
 			X = margin_1; Y += unit_height_1;
 			X += repos(suppress_shift.check, label_width_1 + edit_width_1, edit_height, X, Y);
+
+			// focus-follows control.
+			X = margin_1; Y += unit_height_1;
+			X += repos(focus_follows.check, label_width_1 + edit_width_1, edit_height, X, Y);
 		}
 		void size_changed(int width, int height)
 		{
@@ -377,6 +388,7 @@ private:
 					that->ctrl.page_rate.slider,
 					that->ctrl.bpm_div.edit,
 					that->ctrl.suppress_shift.check,
+					that->ctrl.focus_follows.check,
 				};
 				size_t i = std::find(std::begin(controls), std::end(controls), hwnd) - std::begin(controls);
 				if (i >= std::size(controls)) [[unlikely]] break; // not found.
@@ -533,6 +545,13 @@ private:
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::suppress_shift_check), hinst, nullptr);
 
+		// focus-follows control.
+		ctrl.focus_follows.check = ::CreateWindowExW(
+			0, WC_BUTTONW, L"選択オブジェクトの追従",
+			WS_VISIBLE | WS_CHILD | BS_CHECKBOX | BS_AUTOCHECKBOX,
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			root, id(ctrl_ids::focus_follows_check), hinst, nullptr);
+
 		// set slider properties.
 		::SendMessageW(ctrl.page_rate.slider, TBM_SETRANGE, TRUE, MAKELPARAM(
 			static_cast<int>(settings.search.page_rate_min * ctrl.page_rate.slider_resolution),
@@ -548,6 +567,7 @@ private:
 
 		// set checkbox state.
 		::SendMessageW(ctrl.suppress_shift.check, BM_SETCHECK, settings.search.suppress_shift ? BST_CHECKED : BST_UNCHECKED, 0);
+		::SendMessageW(ctrl.focus_follows.check, BM_SETCHECK, settings.search.focus_follows ? BST_CHECKED : BST_UNCHECKED, 0);
 
 		// set fonts.
 		for (HWND control : {
@@ -556,6 +576,7 @@ private:
 			ctrl.bpm_div.label,
 			ctrl.bpm_div.edit,
 			ctrl.suppress_shift.check,
+			ctrl.focus_follows.check,
 		}) ::SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(ctrl.gui_font), TRUE);
 
 		// set subclass procedures for tab-navigation.
@@ -564,6 +585,7 @@ private:
 			ctrl.page_rate.slider,
 			ctrl.bpm_div.edit,
 			ctrl.suppress_shift.check,
+			ctrl.focus_follows.check,
 		}) ::SetWindowSubclass(control, tab_navigation_proc, reinterpret_cast<UINT_PTR>(this), {});
 
 		// initialize the layout.
@@ -637,6 +659,13 @@ private:
 		// suppress shift checkbox changed.
 		settings.search.suppress_shift =
 			::SendMessageW(ctrl.suppress_shift.check, BM_GETCHECK, 0, 0) == BST_CHECKED;
+	}
+
+	void sync_focus_follows() const
+	{
+		// focus follows checkbox changed.
+		settings.search.focus_follows =
+			::SendMessageW(ctrl.focus_follows.check, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	}
 
 	LRESULT wnd_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
@@ -733,6 +762,17 @@ private:
 				case BN_CLICKED:
 				{
 					sync_suppress_shift();
+					return 0;
+				}
+				}
+				break;
+			}
+			case ctrl_ids::focus_follows_check:
+			{
+				switch (HIWORD(wparam)) {
+				case BN_CLICKED:
+				{
+					sync_focus_follows();
 					return 0;
 				}
 				}
@@ -969,10 +1009,32 @@ struct BPM_grid_calc : Timeline_calc {
 ////////////////////////////////
 static void move_frame_wrap(EDIT_SECTION* edit, int layer, int frame)
 {
+	frame = std::clamp(frame, 0, edit->info->frame_max);
+	int const d_layer = layer - edit->info->layer,
+		d_frame = frame - edit->info->frame;
+	if (d_layer == 0 && d_frame == 0) return;
+
 	cursor_undo_queue.check_forward(frame);
 	if (settings.search.suppress_shift)
 		plugin_window.fake_keystate(VK_SHIFT, false);
 	edit->set_cursor_layer_frame(layer, frame);
+
+	// let the focus follow the cursor.
+	if (d_frame != 0 && settings.search.focus_follows) {
+		auto const obj = edit->get_focus_object();
+		if (obj != nullptr) {
+			auto pos = edit->get_object_layer_frame(obj);
+			if (frame < pos.start || pos.end < frame) {
+				auto const tgt = edit->find_object(pos.layer, frame);
+				if (tgt != nullptr && tgt != obj) {
+					pos = edit->get_object_layer_frame(tgt);
+					if (pos.start <= frame && frame <= pos.end) {
+						edit->set_focus_object(tgt);
+					}
+				}
+			}
+		}
+	}
 }
 static void move_layer_core(EDIT_SECTION* edit, bool forward, bool allow_midpt)
 {
@@ -984,8 +1046,7 @@ static void move_layer_core(EDIT_SECTION* edit, bool forward, bool allow_midpt)
 			edit->get_object_layer_frame(obj).layer :
 			edit->info->layer;
 	int next_frame = find_boundary(edit, layer, frame, forward, allow_midpt);
-	if (next_frame != edit->info->frame)
-		move_frame_wrap(edit, edit->info->layer, next_frame);
+	move_frame_wrap(edit, edit->info->layer, next_frame);
 }
 
 static void move_scene_core(EDIT_SECTION* edit, bool forward, bool allow_midpt)
@@ -997,16 +1058,14 @@ static void move_scene_core(EDIT_SECTION* edit, bool forward, bool allow_midpt)
 		auto f = find_boundary(edit, layer, frame, forward, allow_midpt);
 		next_frame = (next_frame > f) == forward ? f : next_frame;
 	}
-	if (next_frame != edit->info->frame)
-		move_frame_wrap(edit, edit->info->layer, next_frame);
+	move_frame_wrap(edit, edit->info->layer, next_frame);
 }
 
 static void move_per_page(EDIT_SECTION* edit, double rate)
 {
 	// move by page.
 	int const delta = static_cast<int>(std::round(edit->info->display_frame_num * rate));
-	if (delta != 0)
-		move_frame_wrap(edit, edit->info->layer, edit->info->frame + delta);
+	move_frame_wrap(edit, edit->info->layer, edit->info->frame + delta);
 }
 
 static void move_to_focused(EDIT_SECTION* edit)
@@ -1018,8 +1077,7 @@ static void move_to_focused(EDIT_SECTION* edit)
 		int next_frame = edit->info->frame;
 		if (next_frame < start) next_frame = start;
 		else if (next_frame > end) next_frame = end;
-		if (next_frame != edit->info->frame || layer != edit->info->layer)
-			move_frame_wrap(edit, layer, next_frame);
+		move_frame_wrap(edit, layer, next_frame);
 	}
 }
 
@@ -1027,8 +1085,7 @@ static void move_to_timeline_center(EDIT_SECTION* edit)
 {
 	// move to the center of the timeline view.
 	int const next_frame = edit->info->display_frame_start + (edit->info->display_frame_num >> 1);
-	if (next_frame != edit->info->frame)
-		move_frame_wrap(edit, edit->info->layer, next_frame);
+	move_frame_wrap(edit, edit->info->layer, next_frame);
 }
 
 
@@ -1184,8 +1241,7 @@ static void move_to_bpm_grid(EDIT_SECTION* edit, int tempo_factor_num, int tempo
 
 	// then move to the BPM grid.
 	int const next_frame = bpm_calc.beat_to_frame_int(target_beat);
-	if (next_frame != edit->info->frame)
-		move_frame_wrap(edit, edit->info->layer, next_frame);
+	move_frame_wrap(edit, edit->info->layer, next_frame);
 }
 
 static void shift_bpm_grid_nearest_measure_to_cursor(EDIT_SECTION* edit)
@@ -1238,14 +1294,13 @@ static void cursor_undo(EDIT_SECTION* edit)
 {
 	cursor_undo_queue.check_forward(edit->info->frame);
 	if (cursor_undo_queue.size() <= 1) return;
-	if (int const prev_frame = cursor_undo_queue.backward(); prev_frame != edit->info->frame)
-		move_frame_wrap(edit, edit->info->layer, prev_frame);
+	move_frame_wrap(edit, edit->info->layer, cursor_undo_queue.backward());
 }
 
 static void cursor_redo(EDIT_SECTION* edit)
 {
 	cursor_undo_queue.check_forward(edit->info->frame);
-	if (int next_frame; cursor_undo_queue.repush(next_frame) && next_frame != edit->info->frame)
+	if (int next_frame; cursor_undo_queue.repush(next_frame))
 		move_frame_wrap(edit, edit->info->layer, next_frame);
 }
 
