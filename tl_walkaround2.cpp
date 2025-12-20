@@ -1263,209 +1263,210 @@ static void on_load_project(PROJECT_FILE* project)
 ////////////////////////////////
 // define menu items.
 ////////////////////////////////
+#define NAME(name)	L"TLショトカ移動2\\" name
 constexpr struct {
 	wchar_t const* name;
 	void (*callback)(EDIT_SECTION* edit);
 } menu_items[] = {
-	{ L"左の中間点(レイヤー)", [](EDIT_SECTION* edit)
+	{ NAME(L"左の中間点(レイヤー)"), [](EDIT_SECTION* edit)
 	{
 		move_layer_core(edit, false, true);
 	}
 	},
-	{ L"右の中間点(レイヤー)", [](EDIT_SECTION* edit)
+	{ NAME(L"右の中間点(レイヤー)"), [](EDIT_SECTION* edit)
 	{
 		move_layer_core(edit, true, true);
 	}
 	},
-	{ L"左の境界(レイヤー)", [](EDIT_SECTION* edit)
+	{ NAME(L"左の境界(レイヤー)"), [](EDIT_SECTION* edit)
 	{
 		move_layer_core(edit, false, false);
 	}
 	},
-	{ L"右の境界(レイヤー)", [](EDIT_SECTION* edit)
+	{ NAME(L"右の境界(レイヤー)"), [](EDIT_SECTION* edit)
 	{
 		move_layer_core(edit, true, false);
 	}
 	},
-	{ L"左の中間点(シーン)", [](EDIT_SECTION* edit)
+	{ NAME(L"左の中間点(シーン)"), [](EDIT_SECTION* edit)
 	{
 		move_scene_core(edit, false, true);
 	}
 	},
-	{ L"右の中間点(シーン)", [](EDIT_SECTION* edit)
+	{ NAME(L"右の中間点(シーン)"), [](EDIT_SECTION* edit)
 	{
 		move_scene_core(edit, true, true);
 	}
 	},
-	{ L"左の境界(シーン)", [](EDIT_SECTION* edit)
+	{ NAME(L"左の境界(シーン)"), [](EDIT_SECTION* edit)
 	{
 		move_scene_core(edit, false, false);
 	}
 	},
-	{ L"右の境界(シーン)", [](EDIT_SECTION* edit)
+	{ NAME(L"右の境界(シーン)"), [](EDIT_SECTION* edit)
 	{
 		move_scene_core(edit, true, false);
 	}
 	},
-	{ L"左へ1ページ移動", [](EDIT_SECTION* edit)
+	{ NAME(L"左へ1ページ移動"), [](EDIT_SECTION* edit)
 	{
 		move_per_page(edit, -1.0);
 	}
 	},
-	{ L"右へ1ページ移動", [](EDIT_SECTION* edit)
+	{ NAME(L"右へ1ページ移動"), [](EDIT_SECTION* edit)
 	{
 		move_per_page(edit, +1.0);
 	}
 	},
-	{ L"左へ一定量移動", [](EDIT_SECTION* edit)
+	{ NAME(L"左へ一定量移動"), [](EDIT_SECTION* edit)
 	{
 		move_per_page(edit, -settings.search.page_rate);
 	}
 	},
-	{ L"右へ一定量移動", [](EDIT_SECTION* edit)
+	{ NAME(L"右へ一定量移動"), [](EDIT_SECTION* edit)
 	{
 		move_per_page(edit, +settings.search.page_rate);
 	}
 	},
-	{ L"選択オブジェクトへ移動", &move_to_focused },
-	{ L"タイムラインの中央へ移動", &move_to_timeline_center },
+	{ NAME(L"選択オブジェクトへ移動"), &move_to_focused },
+	{ NAME(L"タイムラインの中央へ移動"), &move_to_timeline_center },
 
-	{ L"左へ1ページスクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"左へ1ページスクロール"), [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_per_page(edit, -1.0);
 	}
 	},
-	{ L"右へ1ページスクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"右へ1ページスクロール"), [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_per_page(edit, +1.0);
 	}
 	},
-	{ L"左へ一定量スクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"左へ一定量スクロール"), [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_per_page(edit, -settings.search.page_rate);
 	}
 	},
-	{ L"右へ一定量スクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"右へ一定量スクロール"), [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_per_page(edit, +settings.search.page_rate);
 	}
 	},
-	{ L"先頭へスクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"先頭へスクロール"), [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_to_start_end(edit, true);
 	}
 	},
-	{ L"最後へスクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"最後へスクロール"), [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_to_start_end(edit, false);
 	}
 	},
-	{ L"カーソル位置へスクロール", &scroll_horiz_to_cursor },
-	{ L"選択オブジェクトへスクロール", &scroll_to_focused },
+	{ NAME(L"カーソル位置へスクロール"), &scroll_horiz_to_cursor },
+	{ NAME(L"選択オブジェクトへスクロール"), &scroll_to_focused },
 
-	{ L"上へスクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"上へスクロール"), [](EDIT_SECTION* edit)
 	{
 		edit->set_display_layer_frame(
 			edit->info->display_layer_start - 1,
 			edit->info->display_frame_start);
 	}
 	},
-	{ L"下へスクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"下へスクロール"), [](EDIT_SECTION* edit)
 	{
 		edit->set_display_layer_frame(
 			edit->info->display_layer_start + 1,
 			edit->info->display_frame_start);
 	}
 	},
-	{ L"上へ1ページスクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"上へ1ページスクロール"), [](EDIT_SECTION* edit)
 	{
 		edit->set_display_layer_frame(
 			edit->info->display_layer_start - edit->info->display_layer_num,
 			edit->info->display_frame_start);
 	}
 	},
-	{ L"下へ1ページスクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"下へ1ページスクロール"), [](EDIT_SECTION* edit)
 	{
 		edit->set_display_layer_frame(
 			edit->info->display_layer_start + edit->info->display_layer_num,
 			edit->info->display_frame_start);
 	}
 	},
-	{ L"最上端へスクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"最上端へスクロール"), [](EDIT_SECTION* edit)
 	{
 		scroll_vert_to_top_bottom(edit, true);
 	}
 	},
-	{ L"最下端へスクロール", [](EDIT_SECTION* edit)
+	{ NAME(L"最下端へスクロール"), [](EDIT_SECTION* edit)
 	{
 		scroll_vert_to_top_bottom(edit, false);
 	}
 	},
-	{ L"選択レイヤーへスクロール", &scroll_vert_to_selected },
+	{ NAME(L"選択レイヤーへスクロール"), &scroll_vert_to_selected },
 
-	{ L"現在フレームのオブジェクトを選択(逆順)", &focus_cursor_object_rev },
-	{ L"上のオブジェクトを選択", [](EDIT_SECTION* edit)
+	{ NAME(L"現在フレームのオブジェクトを選択(逆順)"), &focus_cursor_object_rev },
+	{ NAME(L"上のオブジェクトを選択"), [](EDIT_SECTION* edit)
 	{
 		focus_above_below_layer_object(edit, false);
 	}
 	},
-	{ L"下のオブジェクトを選択", [](EDIT_SECTION* edit)
+	{ NAME(L"下のオブジェクトを選択"), [](EDIT_SECTION* edit)
 	{
 		focus_above_below_layer_object(edit, true);
 	}
 	},
-	{ L"上のレイヤーを選択", [](EDIT_SECTION* edit)
+	{ NAME(L"上のレイヤーを選択"), [](EDIT_SECTION* edit)
 	{
 		edit->set_cursor_layer_frame(edit->info->layer - 1, edit->info->frame);
 	}
 	},
-	{ L"下のレイヤーを選択", [](EDIT_SECTION* edit)
+	{ NAME(L"下のレイヤーを選択"), [](EDIT_SECTION* edit)
 	{
 		edit->set_cursor_layer_frame(edit->info->layer + 1, edit->info->frame);
 	}
 	},
 
-	{ L"左の小節線へ移動(BPM)", [](EDIT_SECTION* edit)
+	{ NAME(L"左の小節線へ移動(BPM)"), [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, 1, edit->info->grid_bpm_beat, false);
 	}
 	},
-	{ L"右の小節線へ移動(BPM)", [](EDIT_SECTION* edit)
+	{ NAME(L"右の小節線へ移動(BPM)"), [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, 1, edit->info->grid_bpm_beat, true);
 	}
 	},
-	{ L"左の拍数線へ移動(BPM)", [](EDIT_SECTION* edit)
+	{ NAME(L"左の拍数線へ移動(BPM)"), [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, 1, 1, false);
 	}
 	},
-	{ L"右の拍数線へ移動(BPM)", [](EDIT_SECTION* edit)
+	{ NAME(L"右の拍数線へ移動(BPM)"), [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, 1, 1, true);
 	}
 	},
-	{ L"左に1/N拍移動(BPM)", [](EDIT_SECTION* edit)
+	{ NAME(L"左に1/N拍移動(BPM)"), [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, settings.search.bpm_grid_div, 1, false);
 	}
 	},
-	{ L"右に1/N拍移動(BPM)", [](EDIT_SECTION* edit)
+	{ NAME(L"右に1/N拍移動(BPM)"), [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, settings.search.bpm_grid_div, 1, true);
 	}
 	},
-	{ L"左にグリッド基準線を移動(BPM)", [](EDIT_SECTION* edit)
+	{ NAME(L"左にグリッド基準線を移動(BPM)"), [](EDIT_SECTION* edit)
 	{
 		shift_bpm_grid_offset(edit, -1);
 	}
 	},
-	{ L"右にグリッド基準線を移動(BPM)", [](EDIT_SECTION* edit)
+	{ NAME(L"右にグリッド基準線を移動(BPM)"), [](EDIT_SECTION* edit)
 	{
 		shift_bpm_grid_offset(edit, +1);
 	}
 	},
-	{ L"グリッド基準線を現在フレームに(BPM)", [](EDIT_SECTION* edit)
+	{ NAME(L"グリッド基準線を現在フレームに(BPM)"), [](EDIT_SECTION* edit)
 	{
 		Timeline_calc const tl_calc{
 			edit->info->rate,
@@ -1478,12 +1479,13 @@ constexpr struct {
 		);
 	}
 	},
-	{ L"最寄りの小節線を現在フレームに(BPM)", &shift_bpm_grid_nearest_measure_to_cursor },
+	{ NAME(L"最寄りの小節線を現在フレームに(BPM)"), &shift_bpm_grid_nearest_measure_to_cursor },
 
 	// cursor undo menu items.
-	{ L"カーソル位置を元に戻す", &cursor_undo },
-	{ L"カーソル位置をやり直す", &cursor_redo },
+	{ NAME(L"カーソル位置を元に戻す"), &cursor_undo },
+	{ NAME(L"カーソル位置をやり直す"), &cursor_redo },
 };
+#undef NAME
 
 
 ////////////////////////////////
@@ -1520,13 +1522,13 @@ extern "C" __declspec(dllexport) void InitializeLogger(LOG_HANDLE* handle)
 // init (check version).
 extern "C" __declspec(dllexport) bool InitializePlugin(DWORD version)
 {
-	constexpr uint32_t least_ver = 2002301; // at least 2.00 beta23a.
+	constexpr uint32_t least_ver = 2002500; // at least 2.00 beta25.
 	return version >= least_ver;
 }
 
 // register.
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.00-for-beta24a"
+#define PLUGIN_VERSION	"v1.10-beta1 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define PLUGIN_INFO_FMT(name, ver, author)	(name " " ver " by " author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
@@ -1548,7 +1550,7 @@ extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 
 	// register menu items. (import menu is used although it's not appropriate. might move later.)
 	for (auto const& item : menu_items)
-		host->register_import_menu(item.name, item.callback);
+		host->register_edit_menu(item.name, item.callback);
 
 	// register event callbacks.
 	host->register_project_load_handler(&on_load_project);
