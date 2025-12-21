@@ -18,6 +18,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <concepts>
 #include <memory>
 #include <vector>
+#include <set>
 #include <tuple>
 #include <string>
 #include <string_view>
@@ -37,7 +38,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.20-beta1 (for beta25)"
+#define PLUGIN_VERSION	"v1.20-beta2 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 
 
@@ -1314,6 +1315,147 @@ static void shift_bpm_grid_offset(EDIT_SECTION* edit, int frames)
 
 
 ////////////////////////////////
+// repositioning objects.
+////////////////////////////////
+enum class Direction {
+	Left, Right, Up, Down,
+};
+static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
+{
+	std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> targets{};
+
+	// collect target objects.
+	if (int const n = edit->get_selected_object_num(); n > 0) {
+		for (int i = 0; i < n; i++)
+			targets.emplace_back(edit->get_selected_object(i), OBJECT_LAYER_FRAME{});
+	}
+	else if (auto const obj = edit->get_focus_object(); obj != nullptr)
+		targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
+	if (targets.empty()) return; // no operation.
+
+	// get their positions and min/max of the range.
+	std::set<OBJECT_HANDLE> target_set{};
+	int layer_min = edit->info->layer_max,
+		layer_max = 0,
+		frame_min = edit->info->frame_max,
+		frame_max = 0;
+	for (auto& [obj, pos] : targets) {
+		pos = edit->get_object_layer_frame(obj);
+		layer_min = std::min(layer_min, pos.layer);
+		layer_max = std::max(layer_max, pos.layer);
+		frame_min = std::min(frame_min, pos.start);
+		frame_max = std::max(frame_max, pos.end);
+		target_set.emplace(obj);
+	}
+
+	// sort these objects by layer, and then by frame.
+	std::sort(targets.begin(), targets.end(), [](auto const& p1, auto const& p2) -> bool {
+		auto const& pos1 = p1.second;
+		auto const& pos2 = p2.second;
+		return pos1.layer < pos2.layer ||
+			(pos1.layer == pos2.layer && pos1.start < pos2.start);
+	});
+
+	// then move.
+	uint32_t moved_count = 0, left_behind = 0;
+	switch (dir) {
+	case Direction::Left:
+	{
+		int offset = frame_min;
+
+		// find the maximum offset that each object does not collide with others.
+		for (auto const& [_, pos] : targets) {
+			auto const [o, s, e] = find_prev_obj(edit, pos.layer, pos.start - 1);
+			if (o == nullptr) continue;
+			if (target_set.contains(o)) continue; // ignore target objects.
+			offset = std::min(offset, pos.start - e);
+		}
+
+		// move left if enough space found.
+		if (offset > 0) {
+			for (auto const& [obj, pos] : targets) {
+				if (edit->move_object(obj, pos.layer, pos.start - offset))
+					moved_count++;
+			}
+			left_behind = static_cast<uint32_t>(targets.size()) - moved_count;
+		}
+		break;
+	}
+	case Direction::Right:
+	{
+		std::reverse(targets.begin(), targets.end());
+		int offset = edit->info->frame_max - frame_max;
+
+		// find the maximum offset that each object does not collide with others.
+		for (auto const& [_, pos] : targets) {
+			auto const o = edit->find_object(pos.layer, pos.end + 1);
+			if (o == nullptr) continue;
+			if (target_set.contains(o)) continue; // ignore target objects.
+			auto const p = edit->get_object_layer_frame(o);
+			offset = std::min(offset, p.start - pos.end - 1);
+		}
+
+		// move left if enough space found.
+		if (offset > 0) {
+			for (auto const& [obj, pos] : targets) {
+				if (edit->move_object(obj, pos.layer, pos.start + offset))
+					moved_count++;
+			}
+			left_behind = static_cast<uint32_t>(targets.size()) - moved_count;
+		}
+		break;
+	}
+	case Direction::Up:
+	case Direction::Down:
+	{
+		int const d = dir == Direction::Up ? -1 : +1;
+		if (d > 0) std::reverse(targets.begin(), targets.end());
+
+		// step by 1 layer and check for collisions.
+		int diff = d;
+		for (; diff + layer_min >= 0; diff += d) {
+			for (auto const& [_, pos] : targets) {
+				for (int f = pos.start; f <= pos.end;) {
+					auto const o = edit->find_object(pos.layer + diff, f);
+					if (o == nullptr) break;
+					auto const p = edit->get_object_layer_frame(o);
+					f = p.end + 1;
+					if (target_set.contains(o)) continue; // ignore target objects.
+					if (std::max(pos.start, p.start) <= std::min(pos.end, p.end))
+						goto found_collision_v;
+				}
+			}
+			break;
+		found_collision_v:;
+		}
+
+		// move up or down if no collision found.
+		if (diff + layer_min >= 0) {
+			for (auto const& [obj, pos] : targets) {
+				if (edit->move_object(obj, pos.layer + diff, pos.start))
+					moved_count++;
+			}
+			left_behind = static_cast<uint32_t>(targets.size()) - moved_count;
+		}
+		break;
+	}
+	}
+
+	// output an information message.
+	if (moved_count + left_behind > 0) {
+		std::wstring mes = L"Moved " + std::to_wstring(moved_count) + L" object(s).";
+		if (left_behind > 0) {
+			mes += L" (" + std::to_wstring(left_behind) + L" left behind.)";
+			logger->warn(logger, mes.c_str());
+		}
+		else logger->info(logger, mes.c_str());
+	}
+	else logger->info(logger, L"Found no space to move the object(s).");
+
+}
+
+
+////////////////////////////////
 // cursor undo operations.
 ////////////////////////////////
 static void cursor_undo(EDIT_SECTION* edit)
@@ -1572,6 +1714,28 @@ constexpr struct {
 	},
 	{ NAME(L"最寄りの小節線を現在フレームに(BPM)"), &shift_bpm_grid_nearest_measure_to_cursor },
 
+	// object moving menu items.
+	{ NAME(L"左に選択オブジェクトを詰める"), [](EDIT_SECTION* edit)
+	{
+		move_selected_objects(edit, Direction::Left);
+	}
+	},
+	{ NAME(L"右に選択オブジェクトを詰める"), [](EDIT_SECTION* edit)
+	{
+		move_selected_objects(edit, Direction::Right);
+	}
+	},
+	{ NAME(L"上に選択オブジェクトを移動"), [](EDIT_SECTION* edit)
+	{
+		move_selected_objects(edit, Direction::Up);
+	}
+	},
+	{ NAME(L"下に選択オブジェクトを移動"), [](EDIT_SECTION* edit)
+	{
+		move_selected_objects(edit, Direction::Down);
+	}
+	},
+
 	// cursor undo menu items.
 	{ NAME(L"カーソル位置を元に戻す"), &cursor_undo },
 	{ NAME(L"カーソル位置をやり直す"), &cursor_redo },
@@ -1636,7 +1800,7 @@ extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 	// create and register plugin window.
 	plugin_window.create_register_window(host, PLUGIN_NAME);
 
-	// register menu items. (import menu is used although it's not appropriate. might move later.)
+	// register menu items.
 	for (auto const& item : menu_items)
 		host->register_edit_menu(item.name, item.callback);
 
