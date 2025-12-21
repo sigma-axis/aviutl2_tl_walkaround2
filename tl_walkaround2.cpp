@@ -38,7 +38,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.20-beta2 (for beta25)"
+#define PLUGIN_VERSION	"v1.20-beta3 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 
 
@@ -1490,7 +1490,7 @@ static void on_load_project(PROJECT_FILE* project)
 constexpr struct {
 	wchar_t const* name;
 	void (*callback)(EDIT_SECTION* edit);
-} menu_items[] = {
+} edit_menu_items[] = {
 	{ NAME(L"左の中間点(レイヤー)"), [](EDIT_SECTION* edit)
 	{
 		move_layer_core(edit, false, true);
@@ -1739,6 +1739,18 @@ constexpr struct {
 	// cursor undo menu items.
 	{ NAME(L"カーソル位置を元に戻す"), &cursor_undo },
 	{ NAME(L"カーソル位置をやり直す"), &cursor_redo },
+},
+obj_menu_items[] = {
+	{ L"左に選択オブジェクトを詰める", [](EDIT_SECTION* edit)
+	{
+		move_selected_objects(edit, Direction::Left);
+	}
+	},
+	{ L"右に選択オブジェクトを詰める", [](EDIT_SECTION* edit)
+	{
+		move_selected_objects(edit, Direction::Right);
+	}
+	},
 };
 #undef NAME
 
@@ -1801,8 +1813,10 @@ extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 	plugin_window.create_register_window(host, PLUGIN_NAME);
 
 	// register menu items.
-	for (auto const& item : menu_items)
+	for (auto const& item : edit_menu_items)
 		host->register_edit_menu(item.name, item.callback);
+	for (auto const& item : obj_menu_items)
+		host->register_object_menu(item.name, item.callback);
 
 	// register event callbacks.
 	host->register_project_load_handler(&on_load_project);
