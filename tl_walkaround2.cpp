@@ -15,6 +15,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <utility>
 #include <cmath>
 #include <limits>
+#include <bit>
 #include <concepts>
 #include <memory>
 #include <vector>
@@ -38,7 +39,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.20-beta3 (for beta25)"
+#define PLUGIN_VERSION	"v1.20 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 
 
@@ -52,7 +53,7 @@ constinit struct Settings {
 #define decl_prop(type, name, def)	\
 	type name = name##_def; \
 	constexpr static type name##_def = (def); \
-	constexpr static std::wstring_view name##_key = L###name
+	constexpr static std::wstring_view name##_key = L## #name
 #define decl_prop_minmax(type, name, def, min, max)	\
 	decl_prop(type, name, def); \
 	constexpr static type name##_min = (min), name##_max = (max);
@@ -1443,15 +1444,18 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 
 	// output an information message.
 	if (moved_count + left_behind > 0) {
-		std::wstring mes = L"Moved " + std::to_wstring(moved_count) + L" object(s).";
+		constexpr std::wstring_view
+			pat1 = L"Moved %d object(s).", pat2 = L" (%d left behind.)";
+		constexpr size_t len_num = 11; // "-2147483648"
+		wchar_t buf[std::bit_ceil(pat1.size() + pat2.size() + 2 * (len_num - 2) + 1)];
+		auto const len = ::swprintf_s(buf, pat1.data(), moved_count);
 		if (left_behind > 0) {
-			mes += L" (" + std::to_wstring(left_behind) + L" left behind.)";
-			logger->warn(logger, mes.c_str());
+			::swprintf_s(buf + len, std::size(buf) - len, pat2.data(), left_behind);
+			logger->warn(logger, buf);
 		}
-		else logger->info(logger, mes.c_str());
+		else logger->info(logger, buf);
 	}
 	else logger->info(logger, L"Found no space to move the object(s).");
-
 }
 
 
