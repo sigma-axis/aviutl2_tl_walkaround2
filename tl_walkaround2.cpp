@@ -39,7 +39,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.21-beta1 (for beta25)"
+#define PLUGIN_VERSION	"v1.21-beta2 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 
 
@@ -1373,7 +1373,32 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 			offset = std::min(offset, pos.start - e);
 		}
 
-		// move left if enough space found.
+		if (offset == 0 && frame_min > 0) {
+			// if no space is found, "jump over" the objects to left
+			// and find the nearest possible space.
+			for (int ofs = 2, prev = ofs; ofs <= frame_min; prev = ofs) {
+				for (auto const& [_, pos] : targets) {
+					for (int f = pos.start - ofs; f <= pos.end - ofs; ) {
+						auto const o = edit->find_object(pos.layer, f);
+						if (o == nullptr) break;
+						auto const p = edit->get_object_layer_frame(o);
+						f = p.end + 1;
+						if (target_set.contains(o)) continue; // ignore target objects.
+						if (std::max(pos.start - ofs, p.start) <= std::min(pos.end - ofs, p.end)) {
+							// objects will overlap. find the next candidate.
+							ofs = pos.end + 1 - p.start;
+							break;
+						}
+					}
+				}
+				if (prev == ofs) {
+					offset = ofs;
+					break;
+				}
+			}
+		}
+
+		// move left if suitable space is found.
 		if (offset > 0) {
 			for (auto const& [obj, pos] : targets) {
 				if (edit->move_object(obj, pos.layer, pos.start - offset))
@@ -1397,7 +1422,32 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 			offset = std::min(offset, p.start - pos.end - 1);
 		}
 
-		// move left if enough space found.
+		if (offset == 0 && frame_max < edit->info->frame_max) {
+			// if no space is found, "jump over" the objects to right
+			// and find the nearest possible space.
+			for (int ofs = 2, prev = ofs; ; prev = ofs) {
+				for (auto const& [_, pos] : targets) {
+					for (int f = pos.start + ofs; f <= pos.end + ofs; ) {
+						auto const o = edit->find_object(pos.layer, f);
+						if (o == nullptr) break;
+						auto const p = edit->get_object_layer_frame(o);
+						f = p.end + 1;
+						if (target_set.contains(o)) continue; // ignore target objects.
+						if (std::max(pos.start + ofs, p.start) <= std::min(pos.end + ofs, p.end)) {
+							// objects will overlap. find the next candidate.
+							ofs = p.end + 1 - pos.start;
+							// keep searching.
+						}
+					}
+				}
+				if (prev == ofs) {
+					offset = ofs;
+					break;
+				}
+			}
+		}
+
+		// move right if suitable space is found.
 		if (offset > 0) {
 			for (auto const& [obj, pos] : targets) {
 				if (edit->move_object(obj, pos.layer, pos.start + offset))
