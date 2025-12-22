@@ -39,7 +39,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.20 (for beta25)"
+#define PLUGIN_VERSION	"v1.21-beta1 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 
 
@@ -248,6 +248,19 @@ bool check_window_class(HWND hwnd, wchar_t const(&class_name)[N])
 		&& std::wcsncmp(buf, class_name, N - 1) == 0;
 }
 
+static bool write_key_state(uint8_t vk_code, uint8_t& state)
+{
+	// changes the key state and returns true if changed.
+	// state is updated to the previous state.
+	uint8_t keystates[256];
+	std::ignore = ::GetKeyboardState(keystates);
+	if (keystates[vk_code] == state) return false; // no change.
+
+	std::swap(keystates[vk_code], state);
+	::SetKeyboardState(keystates);
+	return true; // changed.
+}
+
 static EDIT_INFO get_edit_info()
 {
 	EDIT_INFO info;
@@ -283,8 +296,7 @@ private:
 	};
 	struct prv_mes {
 		enum id : uint32_t {
-			cursor_reset = WM_USER + 64,
-			rewind_key,
+			request_callback = WM_USER + 64,
 		};
 	};
 	struct {
@@ -384,122 +396,6 @@ private:
 		RECT pos_slider = {};
 	} ctrl{};
 
-	static LRESULT CALLBACK tab_navigation_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id, DWORD_PTR data)
-	{
-		switch (message) {
-		case WM_KEYDOWN:
-		{
-			// for tab key, move to the next element.
-			switch (wparam) {
-			case VK_TAB:
-			{
-				PluginWindow* that = reinterpret_cast<PluginWindow*>(id);
-				HWND const controls[] = {
-					that->ctrl.page_rate.edit,
-					that->ctrl.page_rate.slider,
-					that->ctrl.bpm_div.edit,
-					that->ctrl.suppress_shift.check,
-					that->ctrl.focus_follows.check,
-				};
-				size_t i = std::find(std::begin(controls), std::end(controls), hwnd) - std::begin(controls);
-				if (i >= std::size(controls)) [[unlikely]] break; // not found.
-
-				// determine the next control.
-				i += ::GetKeyState(VK_SHIFT) < 0 ? std::size(controls) - 1 : 1;
-				i %= std::size(controls);
-				::SetFocus(controls[i]);
-
-				// eliminate WM_CHAR message from the message queue.
-				for (MSG msg; ::PeekMessageW(&msg, hwnd, WM_CHAR, WM_CHAR, PM_REMOVE) != FALSE; );
-				return 0;
-			}
-			case VK_RETURN:
-			{
-				if (!check_window_class(hwnd, WC_EDITW)) break;
-
-				// confirm the input of the text box,
-				// by sending a fake EN_KILLFOCUS notification message.
-				::SendMessageW(::GetParent(hwnd), WM_COMMAND,
-					MAKEWPARAM(::GetDlgCtrlID(hwnd), EN_KILLFOCUS),
-					reinterpret_cast<LPARAM>(hwnd));
-
-				// eliminate WM_CHAR message from the message queue.
-				for (MSG msg; ::PeekMessageW(&msg, hwnd, WM_CHAR, WM_CHAR, PM_REMOVE) != FALSE; );
-				return 0;
-			}
-			}
-			break;
-		}
-		case WM_SETFOCUS:
-		{
-			// select all text if it's an edit control.
-			if (check_window_class(hwnd, WC_EDITW))
-				::PostMessageW(hwnd, EM_SETSEL, 0, -1);
-			break;
-		}
-		case WM_DESTROY:
-		{
-			::RemoveWindowSubclass(hwnd, tab_navigation_proc, id);
-			break;
-		}
-		}
-		return ::DefSubclassProc(hwnd, message, wparam, lparam);
-	}
-
-	static bool write_key_state(uint8_t vk_code, uint8_t& state)
-	{
-		// changes the key state and returns true if changed.
-		// state is updated to the previous state.
-		uint8_t keystates[256];
-		std::ignore = ::GetKeyboardState(keystates);
-		if (keystates[vk_code] == state) return false; // no change.
-
-		std::swap(keystates[vk_code], state);
-		::SetKeyboardState(keystates);
-		return true; // changed.
-	}
-
-public:
-	bool create_register_window(HOST_APP_TABLE* host, wchar_t const* caption) const
-	{
-		WNDCLASSEXW wcex = {
-			.cbSize = sizeof(wcex),
-			.lpfnWndProc = [](auto... args)
-			{
-				return plugin_window.wnd_proc(args...);
-			},
-			.hInstance = ::GetModuleHandleW(nullptr),
-			.hCursor = ::LoadCursorW(nullptr, IDC_ARROW),
-			.hbrBackground = ::GetSysColorBrush(COLOR_3DFACE),
-			.lpszClassName = class_name.data(),
-		};
-		if (::RegisterClassExW(&wcex) == 0) return false;
-		::CreateWindowExW(0, wcex.lpszClassName, caption,
-			WS_POPUP,
-			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-			nullptr, nullptr, ::GetModuleHandleW(nullptr), nullptr);
-
-		host->register_window_client(caption, root);
-		return true;
-	}
-	void post_cursor_poll() const
-	{
-		::PostMessageW(root, prv_mes::cursor_reset, {}, {});
-	}
-	void fake_keystate(uint8_t vk_code, bool pressed) const
-	{
-		fake_keystate(vk_code, uint8_t{ pressed ? 0x80u : 0x00u });
-	}
-	void fake_keystate(uint8_t vk_code, uint8_t state) const
-	{
-		// fake keyboard state change and post a message to rewind the state.
-		if (!write_key_state(vk_code, state)) return;
-
-		// post a message that is processed after the callback returns.
-		::PostMessageW(root, prv_mes::rewind_key, vk_code | (state << 8), {});
-	}
-
-private:
 	void create_window_content()
 	{
 		if (ctrl.initialized()) return;
@@ -583,20 +479,20 @@ private:
 		// set fonts.
 		for (HWND control : {
 			ctrl.page_rate.label,
-			ctrl.page_rate.edit,
-			ctrl.bpm_div.label,
-			ctrl.bpm_div.edit,
-			ctrl.suppress_shift.check,
-			ctrl.focus_follows.check,
+				ctrl.page_rate.edit,
+				ctrl.bpm_div.label,
+				ctrl.bpm_div.edit,
+				ctrl.suppress_shift.check,
+				ctrl.focus_follows.check,
 		}) ::SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(ctrl.gui_font), TRUE);
 
 		// set subclass procedures for tab-navigation.
 		for (HWND control : {
 			ctrl.page_rate.edit,
-			ctrl.page_rate.slider,
-			ctrl.bpm_div.edit,
-			ctrl.suppress_shift.check,
-			ctrl.focus_follows.check,
+				ctrl.page_rate.slider,
+				ctrl.bpm_div.edit,
+				ctrl.suppress_shift.check,
+				ctrl.focus_follows.check,
 		}) ::SetWindowSubclass(control, tab_navigation_proc, reinterpret_cast<UINT_PTR>(this), {});
 
 		// initialize the layout.
@@ -606,6 +502,40 @@ private:
 		sync_page_rate(true);
 	}
 
+public:
+	bool create_register_window(HOST_APP_TABLE* host, wchar_t const* caption) const
+	{
+		WNDCLASSEXW wcex = {
+			.cbSize = sizeof(wcex),
+			.lpfnWndProc = [](auto... args)
+			{
+				return plugin_window.wnd_proc(args...);
+			},
+			.hInstance = ::GetModuleHandleW(nullptr),
+			.hCursor = ::LoadCursorW(nullptr, IDC_ARROW),
+			.hbrBackground = ::GetSysColorBrush(COLOR_3DFACE),
+			.lpszClassName = class_name.data(),
+		};
+		if (::RegisterClassExW(&wcex) == 0) return false;
+		::CreateWindowExW(0, wcex.lpszClassName, caption,
+			WS_POPUP,
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			nullptr, nullptr, ::GetModuleHandleW(nullptr), nullptr);
+
+		host->register_window_client(caption, root);
+		return true;
+	}
+	template<class ParamT> requires(sizeof(ParamT) == sizeof(uintptr_t))
+	void post_callback(void(*callback)(ParamT), ParamT param) const
+	{
+		post_callback(reinterpret_cast<void(*)(uintptr_t)>(callback), std::bit_cast<uintptr_t>(param));
+	}
+	void post_callback(void(*callback)(uintptr_t), uintptr_t param) const
+	{
+		::PostMessageW(root, prv_mes::request_callback, param, reinterpret_cast<LPARAM>(callback));
+	}
+
+private:
 	bool sync_page_rate(bool from_slider) const
 	{
 		if (from_slider) {
@@ -679,6 +609,68 @@ private:
 			::SendMessageW(ctrl.focus_follows.check, BM_GETCHECK, 0, 0) == BST_CHECKED;
 	}
 
+	static LRESULT CALLBACK tab_navigation_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id, DWORD_PTR data)
+	{
+		switch (message) {
+		case WM_KEYDOWN:
+		{
+			// for tab key, move to the next element.
+			switch (wparam) {
+			case VK_TAB:
+			{
+				PluginWindow* that = reinterpret_cast<PluginWindow*>(id);
+				HWND const controls[] = {
+					that->ctrl.page_rate.edit,
+					that->ctrl.page_rate.slider,
+					that->ctrl.bpm_div.edit,
+					that->ctrl.suppress_shift.check,
+					that->ctrl.focus_follows.check,
+				};
+				size_t i = std::find(std::begin(controls), std::end(controls), hwnd) - std::begin(controls);
+				if (i >= std::size(controls)) [[unlikely]] break; // not found.
+
+				// determine the next control.
+				i += ::GetKeyState(VK_SHIFT) < 0 ? std::size(controls) - 1 : 1;
+				i %= std::size(controls);
+				::SetFocus(controls[i]);
+
+				// eliminate WM_CHAR message from the message queue.
+				for (MSG msg; ::PeekMessageW(&msg, hwnd, WM_CHAR, WM_CHAR, PM_REMOVE) != FALSE; );
+				return 0;
+			}
+			case VK_RETURN:
+			{
+				if (!check_window_class(hwnd, WC_EDITW)) break;
+
+				// confirm the input of the text box,
+				// by sending a fake EN_KILLFOCUS notification message.
+				::SendMessageW(::GetParent(hwnd), WM_COMMAND,
+					MAKEWPARAM(::GetDlgCtrlID(hwnd), EN_KILLFOCUS),
+					reinterpret_cast<LPARAM>(hwnd));
+
+				// eliminate WM_CHAR message from the message queue.
+				for (MSG msg; ::PeekMessageW(&msg, hwnd, WM_CHAR, WM_CHAR, PM_REMOVE) != FALSE; );
+				return 0;
+			}
+			}
+			break;
+		}
+		case WM_SETFOCUS:
+		{
+			// select all text if it's an edit control.
+			if (check_window_class(hwnd, WC_EDITW))
+				::PostMessageW(hwnd, EM_SETSEL, 0, -1);
+			break;
+		}
+		case WM_DESTROY:
+		{
+			::RemoveWindowSubclass(hwnd, tab_navigation_proc, id);
+			break;
+		}
+		}
+		return ::DefSubclassProc(hwnd, message, wparam, lparam);
+	}
+
 	LRESULT wnd_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
 	{
 		switch (message) {
@@ -694,8 +686,10 @@ private:
 		case WM_NCDESTROY:
 		{
 			// delete the font.
-			::DeleteObject(ctrl.gui_font);
-			ctrl.gui_font = nullptr;
+			if (ctrl.initialized()) {
+				::DeleteObject(ctrl.gui_font);
+				ctrl.gui_font = nullptr;
+			}
 
 			// turn the timer off.
 			::KillTimer(root, ctrl_ids::timer_cursor_poll);
@@ -704,6 +698,7 @@ private:
 			settings.save();
 			break;
 		}
+		// initialize and re-layout controls.
 		case WM_SHOWWINDOW:
 		{
 			if (wparam == FALSE || ::IsWindowVisible(root) == FALSE) break;
@@ -728,6 +723,7 @@ private:
 			if (ctrl.initialized()) ctrl.layout(root);
 			break;
 		}
+		// messages from children.
 		case WM_HSCROLL:
 		{
 			if (!ctrl.initialized()) break;
@@ -804,17 +800,12 @@ private:
 			}
 			break;
 		}
-		case prv_mes::cursor_reset:
+		// private messages.
+		case prv_mes::request_callback:
 		{
-			// clear the queue and record the initial frame.
-			cursor_undo_queue.clear(get_edit_info().frame);
-			return 0;
-		}
-		case prv_mes::rewind_key:
-		{
-			// rewind the keyboard states.
-			uint8_t vk_code = wparam & 0xff, state = (wparam >> 8) & 0xff;
-			write_key_state(vk_code, state);
+			// call the requested function.
+			auto const callback = reinterpret_cast<void(*)(uintptr_t)>(lparam);
+			if (callback != nullptr) callback(wparam);
 			return 0;
 		}
 		default:
@@ -1026,8 +1017,18 @@ static void move_frame_wrap(EDIT_SECTION* edit, int layer, int frame)
 	if (d_layer == 0 && d_frame == 0) return;
 
 	cursor_undo_queue.check_forward(frame);
-	if (settings.search.suppress_shift)
-		plugin_window.fake_keystate(VK_SHIFT, false);
+	if (settings.search.suppress_shift) {
+		// fake keyboard state.
+		uint8_t key_state = 0x00;
+		if (write_key_state(VK_SHIFT, key_state)) {
+			// rewind the key state after the callback returns.
+			plugin_window.post_callback([](uintptr_t key_state) static
+			{
+				uint8_t state = static_cast<uint8_t>(key_state);
+				write_key_state(VK_SHIFT, state);
+			}, key_state);
+		}
+	}
 	edit->set_cursor_layer_frame(layer, frame);
 
 	// let the focus follow the cursor.
@@ -1482,8 +1483,11 @@ static void cursor_redo(EDIT_SECTION* edit)
 ////////////////////////////////
 static void on_load_project(PROJECT_FILE* project)
 {
-	// clear the cursor undo history.
-	plugin_window.post_cursor_poll();
+	// clear the queue and record the initial frame.
+	plugin_window.post_callback([](uintptr_t) static
+	{
+		cursor_undo_queue.clear(get_edit_info().frame);
+	}, {});
 }
 
 
