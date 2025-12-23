@@ -39,7 +39,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.21-beta5 (for beta25)"
+#define PLUGIN_VERSION	"v1.21-beta6 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_VER_STR	"version 2.0beta25"
 constexpr uint32_t least_ver_num = 2002500;
@@ -1389,8 +1389,16 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 	{
 		int offset = frame_min;
 
-		// find the maximum offset that each object does not collide with others.
+		// find the maximum offset that each object does not collide with others,
+		// or the point that fits to the current frame.
 		for (auto const& [_, pos] : targets) {
+			// compare with the current frame.
+			if (pos.start > edit->info->frame)
+				offset = std::min(offset, pos.start - edit->info->frame);
+			else if (pos.end + 1 > edit->info->frame)
+				offset = std::min(offset, pos.end + 1 - edit->info->frame);
+
+			// compare with the adjacent object.
 			auto const [o, s, e] = find_prev_obj(edit, pos.layer, pos.start - 1);
 			if (o == nullptr) continue;
 			if (target_set.contains(o)) continue; // ignore target objects.
@@ -1437,8 +1445,16 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 		std::reverse(targets.begin(), targets.end());
 		int offset = edit->info->frame_max - frame_min + 1;
 
-		// find the maximum offset that each object does not collide with others.
+		// find the maximum offset that each object does not collide with others,
+		// or the point that fits to the current frame.
 		for (auto const& [_, pos] : targets) {
+			// compare with the current frame.
+			if (pos.end + 1 < edit->info->frame)
+				offset = std::min(offset, edit->info->frame - pos.end - 1);
+			else if (pos.start < edit->info->frame)
+				offset = std::min(offset, edit->info->frame - pos.start);
+
+			// compare with the adjacent object.
 			auto const o = edit->find_object(pos.layer, pos.end + 1);
 			if (o == nullptr) continue;
 			if (target_set.contains(o)) continue; // ignore target objects.
