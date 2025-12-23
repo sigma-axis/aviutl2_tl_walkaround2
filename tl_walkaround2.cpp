@@ -39,7 +39,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.21-beta4 (for beta25)"
+#define PLUGIN_VERSION	"v1.21-beta5 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_VER_STR	"version 2.0beta25"
 constexpr uint32_t least_ver_num = 2002500;
@@ -142,6 +142,9 @@ public:
 	#undef read_bool
 	#undef read_int
 	#undef read_double
+
+		// logging.
+		logger->verbose(logger, L"Settings loaded.");
 	}
 
 	void save() const
@@ -165,6 +168,9 @@ public:
 	#undef write_bool
 	#undef write_int
 	#undef write_val
+
+		// logging.
+		logger->verbose(logger, L"Settings saved.");
 	}
 } settings{};
 
@@ -502,6 +508,9 @@ private:
 
 		// first sync.
 		sync_page_rate(true);
+
+		// logging.
+		logger->verbose(logger, L"Created controls on the client window.");
 	}
 
 public:
@@ -525,6 +534,9 @@ public:
 			nullptr, nullptr, ::GetModuleHandleW(nullptr), nullptr);
 
 		host->register_window_client(caption, root);
+
+		// logging.
+		logger->verbose(logger, L"Created the client window.");
 		return true;
 	}
 	template<class ParamT> requires(sizeof(ParamT) == sizeof(uintptr_t))
@@ -552,6 +564,9 @@ private:
 
 			// update settings.
 			settings.search.page_rate = rate;
+
+			// logging.
+			logger->verbose(logger, L"Settings synchronized: settings.search.page_rate.");
 			return true;
 		}
 		else {
@@ -570,8 +585,6 @@ private:
 			// update slider.
 			::SendMessageW(ctrl.page_rate.slider, TBM_SETPOS, TRUE,
 				static_cast<LPARAM>(std::round(val * ctrl.page_rate.slider_resolution)));
-			// update settings.
-			settings.search.page_rate = val;
 
 			// re-format the text.
 			sync_page_rate(true);
@@ -594,6 +607,9 @@ private:
 
 		val = std::clamp(val, settings.search.bpm_grid_div_min, settings.search.bpm_grid_div_max);
 		settings.search.bpm_grid_div = val;
+
+		// logging.
+		logger->verbose(logger, L"Settings synchronized: settings.search.bpm_grid_div.");
 		return true;
 	}
 
@@ -602,6 +618,9 @@ private:
 		// suppress shift checkbox changed.
 		settings.search.suppress_shift =
 			::SendMessageW(ctrl.suppress_shift.check, BM_GETCHECK, 0, 0) == BST_CHECKED;
+
+		// logging.
+		logger->verbose(logger, L"Settings synchronized: settings.search.suppress_shift.");
 	}
 
 	void sync_focus_follows() const
@@ -609,6 +628,9 @@ private:
 		// focus follows checkbox changed.
 		settings.search.focus_follows =
 			::SendMessageW(ctrl.focus_follows.check, BM_GETCHECK, 0, 0) == BST_CHECKED;
+
+		// logging.
+		logger->verbose(logger, L"Settings synchronized: settings.search.focus_follows.");
 	}
 
 	static LRESULT CALLBACK tab_navigation_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id, DWORD_PTR data)
@@ -1543,6 +1565,7 @@ static void on_load_project(PROJECT_FILE* project)
 	plugin_window.post_callback([](uintptr_t) static
 	{
 		cursor_undo_queue.clear(get_edit_info().frame);
+		logger->verbose(logger, L"Cursor undo buffer cleared.");
 	}, {});
 }
 
