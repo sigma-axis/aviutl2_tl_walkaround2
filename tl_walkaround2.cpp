@@ -39,7 +39,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.21-beta3 (for beta25)"
+#define PLUGIN_VERSION	"v1.21-beta4 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_VER_STR	"version 2.0beta25"
 constexpr uint32_t least_ver_num = 2002500;
@@ -1413,7 +1413,7 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 	case Direction::Right:
 	{
 		std::reverse(targets.begin(), targets.end());
-		int offset = edit->info->frame_max - frame_max;
+		int offset = edit->info->frame_max - frame_min + 1;
 
 		// find the maximum offset that each object does not collide with others.
 		for (auto const& [_, pos] : targets) {
@@ -1424,7 +1424,7 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 			offset = std::min(offset, p.start - pos.end - 1);
 		}
 
-		if (offset == 0 && frame_max < edit->info->frame_max) {
+		if (offset == 0) {
 			// if no space is found, "jump over" the objects to right
 			// and find the nearest possible space.
 			for (int ofs = 2, prev = ofs; ; prev = ofs) {
@@ -1448,6 +1448,10 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 				}
 			}
 		}
+		else if (offset + frame_min > edit->info->frame_max)
+			// if no objects are on the way,
+			// move to the right-most of the timeline.
+			offset = edit->info->frame_max - frame_max;
 
 		// move right if suitable space is found.
 		if (offset > 0) {
