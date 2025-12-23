@@ -39,8 +39,10 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.21-beta2 (for beta25)"
+#define PLUGIN_VERSION	"v1.21-beta3 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
+#define LEAST_VER_STR	"version 2.0beta25"
+constexpr uint32_t least_ver_num = 2002500;
 
 
 ////////////////////////////////
@@ -1237,7 +1239,7 @@ static void focus_above_below_layer_object(EDIT_SECTION* edit, bool below)
 			auto const [_, obj_start, obj_end] = edit->get_object_layer_frame(obj);
 			if (obj_start > end) break; // no more intersection
 
-			// measure the distane to the mid_frame.
+			// measure the distance to the mid_frame.
 			int const distance = std::max({ 0, obj_start - mid_frame, mid_frame - obj_end });
 			if (distance < minimum.second) minimum = { obj, distance };
 			frame = obj_end + 1;
@@ -1847,8 +1849,13 @@ extern "C" __declspec(dllexport) void InitializeLogger(LOG_HANDLE* handle)
 // init (check version).
 extern "C" __declspec(dllexport) bool InitializePlugin(DWORD version)
 {
-	constexpr uint32_t least_ver = 2002500; // at least 2.00 beta25.
-	return version >= least_ver;
+	if (version >= least_ver_num) return true;
+
+	logger->error(logger, L"Requires AviUtl ExEdit2 " LEAST_VER_STR L" or newer!");
+	::MessageBoxW(nullptr,
+		PLUGIN_NAME L" が動作するには AviUtl ExEdit2 " LEAST_VER_STR L" 以上が必要です！",
+		PLUGIN_NAME, MB_OK | MB_ICONERROR);
+	return false;
 }
 
 // register.
