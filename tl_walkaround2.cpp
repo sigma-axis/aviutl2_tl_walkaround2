@@ -39,7 +39,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.21-beta6 (for beta25)"
+#define PLUGIN_VERSION	"v1.21 (for beta25)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_VER_STR	"version 2.0beta25"
 constexpr uint32_t least_ver_num = 2002500;
@@ -1894,7 +1894,8 @@ extern "C" __declspec(dllexport) bool InitializePlugin(DWORD version)
 {
 	if (version >= least_ver_num) return true;
 
-	logger->error(logger, L"Requires AviUtl ExEdit2 " LEAST_VER_STR L" or newer!");
+	if (logger != nullptr)
+		logger->error(logger, L"Requires AviUtl ExEdit2 " LEAST_VER_STR L" or newer!");
 	::MessageBoxW(nullptr,
 		PLUGIN_NAME L" が動作するには AviUtl ExEdit2 " LEAST_VER_STR L" 以上が必要です！",
 		PLUGIN_NAME, MB_OK | MB_ICONERROR);
