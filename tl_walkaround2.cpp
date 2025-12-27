@@ -40,7 +40,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.22-beta2 (for beta26)"
+#define PLUGIN_VERSION	"v1.22-beta3 (for beta26)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_VER_STR	"version 2.0beta26"
 constexpr uint32_t least_ver_num = 2002600;
@@ -235,21 +235,21 @@ struct undo_bundle {
 private:
 	size_t max_len;
 	std::map<KeyT, undo_history<ValT>> queues{};
+	undo_history<ValT>* curr = nullptr;
 
 public:
-	undo_history<ValT>& get(KeyT const& key, ValT const& init)
+	void set_key(KeyT const& key, ValT const& init)
 	{
-		if (auto it = queues.find(key); it != queues.end())
-			return it->second;
-
 		auto p = queues.try_emplace(key, max_len);
 		if (p.second) p.first->second.clear(init);
-		return p.first->second;
+		curr = &p.first->second;
 	}
 	void clear()
 	{
 		queues.clear();
+		curr = nullptr;
 	}
+	undo_history<ValT>* current() const { return curr; }
 	undo_bundle(size_t max_len) : max_len{ max_len }, queues{} {}
 };
 
@@ -839,9 +839,8 @@ private:
 			case ctrl_ids::timer_cursor_poll:
 			{
 				// periodically record the current frame.
-				auto const info = get_edit_info();
-				auto& queue = cursor_undo_queues.get(info.scene_id, info.frame);
-				queue.check_forward(info.frame);
+				if (auto* queue = cursor_undo_queues.current(); queue != nullptr)
+					queue->check_forward(get_edit_info().frame);
 				return 0;
 			}
 			}
@@ -1063,8 +1062,8 @@ static void move_frame_wrap(EDIT_SECTION* edit, int layer, int frame)
 		d_frame = frame - edit->info->frame;
 	if (d_layer == 0 && d_frame == 0) return;
 
-	auto& queue = cursor_undo_queues.get(edit->info->scene_id, frame);
-	queue.check_forward(frame);
+	if (auto* queue = cursor_undo_queues.current(); queue != nullptr)
+		queue->check_forward(frame);
 	if (settings.search.suppress_shift) {
 		// fake keyboard state.
 		uint8_t key_state = 0x00;
@@ -1582,17 +1581,19 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 ////////////////////////////////
 static void cursor_undo(EDIT_SECTION* edit)
 {
-	auto& queue = cursor_undo_queues.get(edit->info->scene_id, edit->info->frame);
-	if (queue.size() <= 1) return;
-	move_frame_wrap(edit, edit->info->layer, queue.backward());
+	if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
+		if (queue->size() <= 1) return;
+		move_frame_wrap(edit, edit->info->layer, queue->backward());
+	}
 }
 
 static void cursor_redo(EDIT_SECTION* edit)
 {
-	auto& queue = cursor_undo_queues.get(edit->info->scene_id, edit->info->frame);
-	queue.check_forward(edit->info->frame);
-	if (int next_frame; queue.repush(next_frame))
-		move_frame_wrap(edit, edit->info->layer, next_frame);
+	if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
+		queue->check_forward(edit->info->frame);
+		if (int next_frame; queue->repush(next_frame))
+			move_frame_wrap(edit, edit->info->layer, next_frame);
+	}
 }
 
 
@@ -1601,14 +1602,15 @@ static void cursor_redo(EDIT_SECTION* edit)
 ////////////////////////////////
 static void on_load_project(PROJECT_FILE* project)
 {
-	// clear the queue and record the initial frame.
-	plugin_window.post_callback([](uintptr_t) static
-	{
-		cursor_undo_queues.clear();
-		auto const info = get_edit_info();
-		cursor_undo_queues.get(info.scene_id, info.frame);
-		logger->verbose(logger, L"Cursor undo buffer cleared.");
-	}, {});
+	// clear the queue.
+	cursor_undo_queues.clear();
+	logger->verbose(logger, L"Cursor undo buffer cleared.");
+}
+
+static void on_scene_changed(EDIT_SECTION* edit)
+{
+	// prepare the undo history for this scene, if not created yet.
+	cursor_undo_queues.set_key(edit->info->scene_id, edit->info->frame);
 }
 
 
@@ -1955,4 +1957,5 @@ extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 
 	// register event callbacks.
 	host->register_project_load_handler(&on_load_project);
+	host->register_change_scene_handler(&on_scene_changed);
 }
