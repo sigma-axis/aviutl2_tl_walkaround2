@@ -39,10 +39,10 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.21 (for beta25)"
+#define PLUGIN_VERSION	"v1.22-beta1 (for beta26)"
 #define PLUGIN_AUTHOR	"sigma-axis"
-#define LEAST_VER_STR	"version 2.0beta25"
-constexpr uint32_t least_ver_num = 2002500;
+#define LEAST_VER_STR	"version 2.0beta26"
+constexpr uint32_t least_ver_num = 2002600;
 
 
 ////////////////////////////////
@@ -1011,8 +1011,8 @@ struct BPM_grid_calc : Timeline_calc {
 	}
 	int beat_to_frame_int(double beat_num) const
 	{
-		// rounding is downward.
-		return static_cast<int>(std::floor(beat_to_frame(beat_num)));
+		// rounding is upward.
+		return static_cast<int>(std::ceil(beat_to_frame(beat_num)));
 	}
 	constexpr double frame_to_beat(double frame_num) const
 	{
@@ -1288,9 +1288,9 @@ static void move_to_bpm_grid(EDIT_SECTION* edit, int tempo_factor_num, int tempo
 	};
 	double target_beat;
 	if (forward) // calculate from the next frame.
-		target_beat = std::ceil(bpm_calc.frame_to_beat(edit->info->frame + 1));
+		target_beat = std::floor(bpm_calc.frame_to_beat(edit->info->frame)) + 1;
 	else // calculate from the previous frame.
-		target_beat = std::ceil(bpm_calc.frame_to_beat(edit->info->frame)) - 1;
+		target_beat = std::floor(bpm_calc.frame_to_beat(edit->info->frame - 1));
 
 	// then move to the BPM grid.
 	int const next_frame = bpm_calc.beat_to_frame_int(target_beat);
@@ -1308,8 +1308,7 @@ static void shift_bpm_grid_nearest_measure_to_cursor(EDIT_SECTION* edit)
 	};
 
 	// find the nearest measure.
-	double const curr_sec = bpm_calc.frame_to_second(edit->info->frame);
-	double const measure = std::round(bpm_calc.second_to_beat(curr_sec));
+	double const measure = std::round(bpm_calc.frame_to_beat(edit->info->frame));
 
 	// calculate the frame at that measure.
 	int const measure_frame = bpm_calc.beat_to_frame_int(measure);
