@@ -20,6 +20,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <memory>
 #include <vector>
 #include <set>
+#include <map>
 #include <tuple>
 #include <string>
 #include <string_view>
@@ -39,7 +40,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.22-beta1 (for beta26)"
+#define PLUGIN_VERSION	"v1.22-beta2 (for beta26)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_VER_STR	"version 2.0beta26"
 constexpr uint32_t least_ver_num = 2002600;
@@ -221,18 +222,38 @@ struct undo_history {
 		i0 = n = m = 0;
 		forward(v);
 	}
-	constexpr undo_history(size_t N) : undo_history{}
+	constexpr undo_history(size_t N) : N{ N }, i0{ 0 }, n{ 0 }, m{ 0 }
 	{
-		this->N = N;
 		vals = std::make_unique_for_overwrite<int[]>(N);
 	}
-	constexpr undo_history() : N{ 0 }, i0{ 0 }, n{ 0 }, m{ 0 }, vals{} {}
 private:
 	size_t i0, n, m, N;
 	std::unique_ptr<T[]> vals;
 };
+template<class KeyT, class ValT>
+struct undo_bundle {
+private:
+	size_t max_len;
+	std::map<KeyT, undo_history<ValT>> queues{};
 
-constinit undo_history<int> cursor_undo_queue{};
+public:
+	undo_history<ValT>& get(KeyT const& key, ValT const& init)
+	{
+		if (auto it = queues.find(key); it != queues.end())
+			return it->second;
+
+		auto p = queues.try_emplace(key, max_len);
+		if (p.second) p.first->second.clear(init);
+		return p.first->second;
+	}
+	void clear()
+	{
+		queues.clear();
+	}
+	undo_bundle(size_t max_len) : max_len{ max_len }, queues{} {}
+};
+
+undo_bundle<int, int> cursor_undo_queues{ 0 };
 
 
 ////////////////////////////////
@@ -818,7 +839,9 @@ private:
 			case ctrl_ids::timer_cursor_poll:
 			{
 				// periodically record the current frame.
-				cursor_undo_queue.check_forward(get_edit_info().frame);
+				auto const info = get_edit_info();
+				auto& queue = cursor_undo_queues.get(info.scene_id, info.frame);
+				queue.check_forward(info.frame);
 				return 0;
 			}
 			}
@@ -1040,7 +1063,8 @@ static void move_frame_wrap(EDIT_SECTION* edit, int layer, int frame)
 		d_frame = frame - edit->info->frame;
 	if (d_layer == 0 && d_frame == 0) return;
 
-	cursor_undo_queue.check_forward(frame);
+	auto& queue = cursor_undo_queues.get(edit->info->scene_id, frame);
+	queue.check_forward(frame);
 	if (settings.search.suppress_shift) {
 		// fake keyboard state.
 		uint8_t key_state = 0x00;
@@ -1558,15 +1582,16 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 ////////////////////////////////
 static void cursor_undo(EDIT_SECTION* edit)
 {
-	cursor_undo_queue.check_forward(edit->info->frame);
-	if (cursor_undo_queue.size() <= 1) return;
-	move_frame_wrap(edit, edit->info->layer, cursor_undo_queue.backward());
+	auto& queue = cursor_undo_queues.get(edit->info->scene_id, edit->info->frame);
+	if (queue.size() <= 1) return;
+	move_frame_wrap(edit, edit->info->layer, queue.backward());
 }
 
 static void cursor_redo(EDIT_SECTION* edit)
 {
-	cursor_undo_queue.check_forward(edit->info->frame);
-	if (int next_frame; cursor_undo_queue.repush(next_frame))
+	auto& queue = cursor_undo_queues.get(edit->info->scene_id, edit->info->frame);
+	queue.check_forward(edit->info->frame);
+	if (int next_frame; queue.repush(next_frame))
 		move_frame_wrap(edit, edit->info->layer, next_frame);
 }
 
@@ -1579,7 +1604,9 @@ static void on_load_project(PROJECT_FILE* project)
 	// clear the queue and record the initial frame.
 	plugin_window.post_callback([](uintptr_t) static
 	{
-		cursor_undo_queue.clear(get_edit_info().frame);
+		cursor_undo_queues.clear();
+		auto const info = get_edit_info();
+		cursor_undo_queues.get(info.scene_id, info.frame);
 		logger->verbose(logger, L"Cursor undo buffer cleared.");
 	}, {});
 }
@@ -1908,8 +1935,8 @@ extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 {
 	// load settings from .ini.
 	settings.load();
-	cursor_undo_queue = { static_cast<size_t>(settings.cursor_undo.queue_size) };
-	cursor_undo_queue.clear(0);
+	cursor_undo_queues = { static_cast<size_t>(settings.cursor_undo.queue_size) };
+
 
 	// プラグインの情報を設定
 	host->set_plugin_information(PLUGIN_INFO);
