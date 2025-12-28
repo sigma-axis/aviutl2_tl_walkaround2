@@ -40,7 +40,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.22 (for beta26)"
+#define PLUGIN_VERSION	"v1.23-beta1 (for beta26)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_VER_STR	"version 2.0beta26"
 constexpr uint32_t least_ver_num = 2002600;
@@ -1406,6 +1406,7 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 
 	// then move.
 	uint32_t moved_count = 0, left_behind = 0;
+	int const supposed_current = edit->info->frame + (edit->info->frame == edit->info->frame_max ? 1 : 0);
 	switch (dir) {
 	case Direction::Left:
 	{
@@ -1415,10 +1416,10 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 		// or the point that fits to the current frame.
 		for (auto const& [_, pos] : targets) {
 			// compare with the current frame.
-			if (pos.start > edit->info->frame)
-				offset = std::min(offset, pos.start - edit->info->frame);
-			else if (pos.end + 1 > edit->info->frame)
-				offset = std::min(offset, pos.end + 1 - edit->info->frame);
+			if (pos.start > supposed_current)
+				offset = std::min(offset, pos.start - supposed_current);
+			else if (pos.end + 1 > supposed_current)
+				offset = std::min(offset, pos.end + 1 - supposed_current);
 
 			// compare with the adjacent object.
 			auto const [o, s, e] = find_prev_obj(edit, pos.layer, pos.start - 1);
@@ -1471,10 +1472,10 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 		// or the point that fits to the current frame.
 		for (auto const& [_, pos] : targets) {
 			// compare with the current frame.
-			if (pos.end + 1 < edit->info->frame)
-				offset = std::min(offset, edit->info->frame - pos.end - 1);
-			else if (pos.start < edit->info->frame)
-				offset = std::min(offset, edit->info->frame - pos.start);
+			if (pos.end + 1 < supposed_current)
+				offset = std::min(offset, supposed_current - pos.end - 1);
+			else if (pos.start < supposed_current)
+				offset = std::min(offset, supposed_current - pos.start);
 
 			// compare with the adjacent object.
 			auto const o = edit->find_object(pos.layer, pos.end + 1);
