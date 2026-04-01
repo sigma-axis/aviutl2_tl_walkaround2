@@ -4,7 +4,7 @@
 
 他にも BPM グリッドへの移動や BPM グリッドの基準点を操作したり，スクロール操作などタイムラインをキーボード操作で見て回るのに便利なコマンドも追加しています．
 
-[ダウンロードはこちら．](https://github.com/sigma-axis/aviutl2_tl_walkaround2/releases) \[紹介動画準備中．\]
+[ダウンロードはこちら．](https://github.com/sigma-axis/aviutl2_tl_walkaround2/releases) [紹介動画．](https://www.nicovideo.jp/watch/sm45743089)
 
 ![タイムラインの現在フレームカーソルが編集点移動するデモ](https://github.com/user-attachments/assets/7192994f-8250-4ab0-ae71-ec1acd8c395a)
 
