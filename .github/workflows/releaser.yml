@@ -40,12 +40,19 @@ jobs:
       # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
       run: msbuild /m /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} ${{ env.SOLUTION_NAME }}.slnx
 
+    - name: Set package version
+      run: |
+        cd .\assets
+        (Get-Content .\package.ini -Raw) -replace '\${ver}', '${{ github.ref_name }}' | Set-Content .\package.ini
+
     - name: Pack into a folder
       run: |
-        mkdir pack
-        copy ${{ matrix.configuration }}/*.aux2 pack
-        copy *.md pack
-        copy LICENSE pack
+        mkdir pack\Plugin\${{ env.SOLUTION_NAME }}
+        copy ${{ matrix.configuration }}\*.aux2 pack\Plugin
+        copy *.md pack\Plugin\${{ env.SOLUTION_NAME }}
+        copy LICENSE pack\Plugin\${{ env.SOLUTION_NAME }}
+        copy assets\package.txt pack
+        copy assets\package.ini pack
       # pick up and add any files you may need.
 
     - name: Upload the build as artifacts
@@ -72,7 +79,7 @@ jobs:
     - name: Compress
       run: |
         cd artifacts
-        zip -r ../aviutl2_${{ env.SOLUTION_NAME }}-${{ github.ref_name }}.zip *
+        zip -r ../aviutl2_${{ env.SOLUTION_NAME }}-${{ github.ref_name }}.au2pkg.zip *
       # rename .zip file for downloading if necessary.
 
     - name: Prepare release notes
@@ -82,7 +89,7 @@ jobs:
         echo "### 更新内容" >> ReleaseNotes.txt
         phase=0
         IFS=$'\n'
-        cat artifacts/README.md | while read line; do
+        cat artifacts/Plugin/${{ env.SOLUTION_NAME }}/README.md | while read line; do
           if [[ $phase == 0 ]]; then
             if [[ $line =~ ^##*[[:space:]]{1,}'改版履歴'[[:space:]]*$ ]]; then phase=1; fi
           elif [[ $phase == 1 ]]; then
