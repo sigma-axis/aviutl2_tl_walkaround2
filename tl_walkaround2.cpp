@@ -1139,7 +1139,7 @@ static void move_to_focused(EDIT_SECTION* edit, bool do_layer, bool do_frame)
 		if (next_frame < start) next_frame = start;
 		else if (next_frame > end) next_frame = end;
 		move_frame_wrap(edit,
-			do_layer ? layer : edit->info->frame,
+			do_layer ? layer : edit->info->layer,
 			do_frame ? next_frame : edit->info->frame);
 	}
 }
