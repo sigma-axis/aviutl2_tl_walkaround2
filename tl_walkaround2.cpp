@@ -40,10 +40,10 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.30-beta2 (for beta39)"
+#define PLUGIN_VERSION	"v1.30-beta3 (for beta39)"
 #define PLUGIN_AUTHOR	"sigma-axis"
-#define LEAST_VER_STR	"version 2.0beta39"
-constexpr uint32_t least_ver_num = 2003900;
+#define LEAST_AVIUTL2_VER_STR	"version 2.0beta39"
+constexpr uint32_t least_aviutl2_ver_num = 2003900;
 
 
 ////////////////////////////////
@@ -1937,16 +1937,24 @@ extern "C" __declspec(dllexport) void InitializeLogger(LOG_HANDLE* handle)
 	logger = handle;
 }
 
-// init (check version).
+// least version (since AviUtl2 beta33).
+extern "C" __declspec(dllexport) DWORD RequiredVersion()
+{
+	return least_aviutl2_ver_num;
+}
+
+// least version (in case of AviUtl2 before beta33).
 extern "C" __declspec(dllexport) bool InitializePlugin(DWORD version)
 {
-	if (version >= least_ver_num) return true;
+	if (version >= least_aviutl2_ver_num) return true;
 
 	if (logger != nullptr)
-		logger->error(logger, L"Requires AviUtl ExEdit2 " LEAST_VER_STR L" or newer!");
+		logger->error(logger, L"Requires AviUtl ExEdit2 " LEAST_AVIUTL2_VER_STR L" or later!");
 	::MessageBoxW(nullptr,
-		PLUGIN_NAME L" が動作するには AviUtl ExEdit2 " LEAST_VER_STR L" 以上が必要です！\n"
-		PLUGIN_NAME L"requires AviUtl ExEdit2 " LEAST_VER_STR L" or newer!",
+		PLUGIN_NAME L" は AviUtl ExEdit2 " LEAST_AVIUTL2_VER_STR L" 以降のバージョンが必要です！ "
+		L"AviUtl2 の最新版を確認してください．\n"
+		PLUGIN_NAME L" requires AviUtl ExEdit2 " LEAST_AVIUTL2_VER_STR L" or later! "
+		L"Make sure your AviUtl2 is the latest.",
 		PLUGIN_NAME, MB_OK | MB_ICONERROR);
 	return false;
 }
