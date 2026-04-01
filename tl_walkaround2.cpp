@@ -40,10 +40,10 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.23-beta1 (for beta26)"
+#define PLUGIN_VERSION	"v1.30-beta2 (for beta39)"
 #define PLUGIN_AUTHOR	"sigma-axis"
-#define LEAST_VER_STR	"version 2.0beta26"
-constexpr uint32_t least_ver_num = 2002600;
+#define LEAST_VER_STR	"version 2.0beta39"
+constexpr uint32_t least_ver_num = 2003900;
 
 
 ////////////////////////////////
@@ -1127,8 +1127,10 @@ static void move_per_page(EDIT_SECTION* edit, double rate)
 	move_frame_wrap(edit, edit->info->layer, edit->info->frame + delta);
 }
 
-static void move_to_focused(EDIT_SECTION* edit)
+static void move_to_focused(EDIT_SECTION* edit, bool do_layer, bool do_frame)
 {
+	if (!do_layer && !do_frame) return;
+
 	// move to the start or end of the focused object, if the cursor is out of the range.
 	auto const obj = edit->get_focus_object();
 	if (obj != nullptr) {
@@ -1136,7 +1138,9 @@ static void move_to_focused(EDIT_SECTION* edit)
 		int next_frame = edit->info->frame;
 		if (next_frame < start) next_frame = start;
 		else if (next_frame > end) next_frame = end;
-		move_frame_wrap(edit, layer, next_frame);
+		move_frame_wrap(edit,
+			do_layer ? layer : edit->info->frame,
+			do_frame ? next_frame : edit->info->frame);
 	}
 }
 
@@ -1612,6 +1616,7 @@ static void on_scene_changed(EDIT_SECTION* edit)
 {
 	// prepare the undo history for this scene, if not created yet.
 	cursor_undo_queues.set_key(edit->info->scene_id, edit->info->frame);
+	logger->verbose(logger, L"on_scene_changed().");
 }
 
 
@@ -1683,7 +1688,21 @@ constexpr struct {
 		move_per_page(edit, +settings.search.page_rate);
 	}
 	},
-	{ NAME(L"選択オブジェクトへ移動"), &move_to_focused },
+	{ NAME(L"選択オブジェクトへ移動"), [](EDIT_SECTION* edit)
+	{
+		move_to_focused(edit, true, true);
+	}
+	},
+	{ NAME(L"選択オブジェクトへ移動(フレームのみ)"), [](EDIT_SECTION* edit)
+	{
+		move_to_focused(edit, false, true);
+	}
+	},
+	{ NAME(L"選択オブジェクトへ移動(レイヤーのみ)"), [](EDIT_SECTION* edit)
+	{
+		move_to_focused(edit, true, false);
+	}
+	},
 	{ NAME(L"タイムラインの中央へ移動"), &move_to_timeline_center },
 
 	{ NAME(L"左へ1ページスクロール"), [](EDIT_SECTION* edit)
@@ -1926,7 +1945,8 @@ extern "C" __declspec(dllexport) bool InitializePlugin(DWORD version)
 	if (logger != nullptr)
 		logger->error(logger, L"Requires AviUtl ExEdit2 " LEAST_VER_STR L" or newer!");
 	::MessageBoxW(nullptr,
-		PLUGIN_NAME L" が動作するには AviUtl ExEdit2 " LEAST_VER_STR L" 以上が必要です！",
+		PLUGIN_NAME L" が動作するには AviUtl ExEdit2 " LEAST_VER_STR L" 以上が必要です！\n"
+		PLUGIN_NAME L"requires AviUtl ExEdit2 " LEAST_VER_STR L" or newer!",
 		PLUGIN_NAME, MB_OK | MB_ICONERROR);
 	return false;
 }
