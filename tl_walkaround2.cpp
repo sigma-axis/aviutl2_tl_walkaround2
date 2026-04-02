@@ -41,7 +41,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.30-beta4 (for beta39)"
+#define PLUGIN_VERSION	"v1.30 (for beta39)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta39"
 constexpr uint32_t least_aviutl2_ver_num = 2003900;

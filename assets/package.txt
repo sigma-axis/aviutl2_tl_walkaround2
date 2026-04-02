@@ -1,6 +1,7 @@
 # TLショトカ移動2 AviUtl ExEdit2 プラグイン
 
 タイムライン上のオブジェクト境界に移動する，いわゆる編集点移動のショートカットコマンドを追加するプラグインです．
+その他タイムライン操作に便利なコマンドも追加します．
 
 公開ページ:
 https://github.com/sigma-axis/aviutl2_tl_walkaround2
