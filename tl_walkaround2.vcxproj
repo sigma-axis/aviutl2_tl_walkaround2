@@ -76,7 +76,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="logging.cpp" />
     <ClCompile Include="tl_walkaround2.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="logging.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

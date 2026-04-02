@@ -33,14 +33,15 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #pragma comment(lib, "comctl32")
 
 #include "plugin2.h"
-#include "logger2.h"
+#include "logging.hpp"
+namespace logging = AviUtl2::logging;
 
 
 ////////////////////////////////
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.30-beta3 (for beta39)"
+#define PLUGIN_VERSION	"v1.30-beta4 (for beta39)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta39"
 constexpr uint32_t least_aviutl2_ver_num = 2003900;
@@ -50,7 +51,6 @@ constexpr uint32_t least_aviutl2_ver_num = 2003900;
 // globals.
 ////////////////////////////////
 constinit HMODULE dll_hinst = nullptr;
-constinit LOG_HANDLE* logger = nullptr;
 constinit EDIT_HANDLE* edit_handle = nullptr;
 constinit struct Settings {
 #define decl_prop(type, name, def)	\
@@ -145,7 +145,7 @@ public:
 	#undef read_double
 
 		// logging.
-		logger->verbose(logger, L"Settings loaded.");
+		logging::verbose(L"Settings loaded.");
 	}
 
 	void save() const
@@ -171,7 +171,7 @@ public:
 	#undef write_val
 
 		// logging.
-		logger->verbose(logger, L"Settings saved.");
+		logging::verbose(L"Settings saved.");
 	}
 } settings{};
 
@@ -531,7 +531,7 @@ private:
 		sync_page_rate(true);
 
 		// logging.
-		logger->verbose(logger, L"Created controls on the client window.");
+		logging::verbose(L"Created controls on the client window.");
 	}
 
 public:
@@ -557,7 +557,7 @@ public:
 		host->register_window_client(caption, root);
 
 		// logging.
-		logger->verbose(logger, L"Created the client window.");
+		logging::verbose(L"Created the client window.");
 		return true;
 	}
 	template<class ParamT> requires(sizeof(ParamT) == sizeof(uintptr_t))
@@ -587,7 +587,7 @@ private:
 			settings.search.page_rate = rate;
 
 			// logging.
-			logger->verbose(logger, L"Settings synchronized: settings.search.page_rate.");
+			logging::verbose(L"Settings synchronized: settings.search.page_rate.");
 			return true;
 		}
 		else {
@@ -630,7 +630,7 @@ private:
 		settings.search.bpm_grid_div = val;
 
 		// logging.
-		logger->verbose(logger, L"Settings synchronized: settings.search.bpm_grid_div.");
+		logging::verbose(L"Settings synchronized: settings.search.bpm_grid_div.");
 		return true;
 	}
 
@@ -641,7 +641,7 @@ private:
 			::SendMessageW(ctrl.suppress_shift.check, BM_GETCHECK, 0, 0) == BST_CHECKED;
 
 		// logging.
-		logger->verbose(logger, L"Settings synchronized: settings.search.suppress_shift.");
+		logging::verbose(L"Settings synchronized: settings.search.suppress_shift.");
 	}
 
 	void sync_focus_follows() const
@@ -651,7 +651,7 @@ private:
 			::SendMessageW(ctrl.focus_follows.check, BM_GETCHECK, 0, 0) == BST_CHECKED;
 
 		// logging.
-		logger->verbose(logger, L"Settings synchronized: settings.search.focus_follows.");
+		logging::verbose(L"Settings synchronized: settings.search.focus_follows.");
 	}
 
 	static LRESULT CALLBACK tab_navigation_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id, DWORD_PTR data)
@@ -888,7 +888,7 @@ static std::vector<int> find_midpoints(std::string_view const& alias)
 			return ret;
 		}
 	}
-	logger->error(logger, L"midpoints could not be identified!");
+	logging::error(L"midpoints could not be identified!");
 	return {};
 }
 
@@ -1573,11 +1573,11 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 		auto const len = ::swprintf_s(buf, pat1.data(), moved_count);
 		if (left_behind > 0) {
 			::swprintf_s(buf + len, std::size(buf) - len, pat2.data(), left_behind);
-			logger->warn(logger, buf);
+			logging::warn(buf);
 		}
-		else logger->info(logger, buf);
+		else logging::info(buf);
 	}
-	else logger->info(logger, L"Found no space to move the object(s).");
+	else logging::info(L"Found no space to move the object(s).");
 }
 
 
@@ -1609,14 +1609,14 @@ static void on_load_project(PROJECT_FILE* project)
 {
 	// clear the queue.
 	cursor_undo_queues.clear();
-	logger->verbose(logger, L"Cursor undo buffer cleared.");
+	logging::verbose(L"Cursor undo buffer cleared.");
 }
 
 static void on_scene_changed(EDIT_SECTION* edit)
 {
 	// prepare the undo history for this scene, if not created yet.
 	cursor_undo_queues.set_key(edit->info->scene_id, edit->info->frame);
-	logger->verbose(logger, L"on_scene_changed().");
+	logging::verbose(L"on_scene_changed().");
 }
 
 
@@ -1931,12 +1931,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 // exported functions.
 ////////////////////////////////
 
-// logging facilities.
-extern "C" __declspec(dllexport) void InitializeLogger(LOG_HANDLE* handle)
-{
-	logger = handle;
-}
-
 // least version (since AviUtl2 beta33).
 extern "C" __declspec(dllexport) DWORD RequiredVersion()
 {
@@ -1948,8 +1942,8 @@ extern "C" __declspec(dllexport) bool InitializePlugin(DWORD version)
 {
 	if (version >= least_aviutl2_ver_num) return true;
 
-	if (logger != nullptr)
-		logger->error(logger, L"Requires AviUtl ExEdit2 " LEAST_AVIUTL2_VER_STR L" or later!");
+	if (logging::logger != nullptr)
+		logging::error(L"Requires AviUtl ExEdit2 " LEAST_AVIUTL2_VER_STR L" or later!");
 	::MessageBoxW(nullptr,
 		PLUGIN_NAME L" は AviUtl ExEdit2 " LEAST_AVIUTL2_VER_STR L" 以降のバージョンが必要です！ "
 		L"AviUtl2 の最新版を確認してください．\n"
