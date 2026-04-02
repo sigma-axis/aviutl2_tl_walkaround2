@@ -1959,18 +1959,25 @@ extern "C" __declspec(dllexport) bool InitializePlugin(DWORD version)
 	return false;
 }
 
-// register.
 #define PLUGIN_INFO_FMT(name, ver, author)	(name " " ver " by " author)
 #define PLUGIN_INFO		PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR)
+constinit COMMON_PLUGIN_TABLE plugin_table = {
+	.name = PLUGIN_NAME,
+	.information = PLUGIN_INFO_FMT(PLUGIN_NAME, PLUGIN_VERSION, PLUGIN_AUTHOR),
+};
+
+// information.
+extern "C" __declspec(dllexport) COMMON_PLUGIN_TABLE* GetCommonPluginTable()
+{
+	return &plugin_table;
+}
+
+// register.
 extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 {
 	// load settings from .ini.
 	settings.load();
 	cursor_undo_queues = { static_cast<size_t>(settings.cursor_undo.queue_size) };
-
-
-	// プラグインの情報を設定
-	host->set_plugin_information(PLUGIN_INFO);
 
 	// 編集ハンドルを作成
 	edit_handle = host->create_edit_handle();
