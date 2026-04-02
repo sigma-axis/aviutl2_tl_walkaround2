@@ -41,7 +41,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.30 (for beta39)"
+#define PLUGIN_VERSION	"v1.40-test1 (for beta39)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta39"
 constexpr uint32_t least_aviutl2_ver_num = 2003900;
@@ -69,6 +69,17 @@ constinit struct Settings {
 
 		constexpr static std::wstring_view section = L"search";
 	} search{};
+
+	enum class time_unit : uint32_t {
+		second = 0,
+		frame = 1,
+	};
+	struct {
+		decl_prop(time_unit, unit, time_unit::second);
+		decl_prop_minmax(double, length, 1.0, -1'000'000, +1'000'000);
+
+		constexpr static std::wstring_view section = L"stretch";
+	} stretch;
 
 	struct {
 		decl_prop_minmax(int, queue_size, 1 << 8, 1 << 4, 1 << 14);
@@ -131,15 +142,24 @@ public:
 			sec.key = std::clamp(sec.key, sec.key##_min, sec.key##_max); \
 		} while (false)
 	#define read_bool(sec, key) sec.key = ::GetPrivateProfileIntW(sec.section.data(), sec.key##_key.data(), sec.key##_def ? 1 : 0, path.c_str()) != 0
+	#define read_type(sec, key, type) sec.key = static_cast<type>(::GetPrivateProfileIntW(sec.section.data(), sec.key##_key.data(), static_cast<int>(sec.key##_def), path.c_str()))
 
 		read_double	(search, page_rate);
 		read_int	(search, bpm_grid_div);
 		read_bool	(search, suppress_shift);
 		read_bool	(search, focus_follows);
 
+		read_type	(stretch, unit, time_unit);
+		switch (stretch.unit) {
+		case time_unit::second: case time_unit::frame: break;
+		default: stretch.unit = stretch.unit_def; break; // invalid value, revert to default.
+		}
+		read_double	(stretch, length);
+
 		read_int	(cursor_undo, queue_size);
 		read_double	(cursor_undo, polling_period);
 
+	#undef read_type
 	#undef read_bool
 	#undef read_int
 	#undef read_double
@@ -160,6 +180,9 @@ public:
 		write_int	(search, bpm_grid_div);
 		write_bool	(search, suppress_shift);
 		write_bool	(search, focus_follows);
+
+		write_val	(stretch, unit, std::to_underlying, L"%d");
+		write_val	(stretch, length, , L"%.3f");
 
 		// even though cursor_undo can't change during runtime, save it
 		// so missing .ini file will be fully generated.
@@ -320,6 +343,10 @@ private:
 			suppress_shift_check,
 			focus_follows_check,
 
+			stretch_label,
+			stretch_unit_combo,
+			stretch_length_edit,
+
 			timer_cursor_poll,
 		};
 	};
@@ -347,6 +374,11 @@ private:
 		struct {
 			HWND check = nullptr;
 		} focus_follows{};
+		struct {
+			HWND label = nullptr;
+			HWND combo = nullptr;
+			HWND edit = nullptr;
+		} stretch;
 		HFONT gui_font = nullptr;
 		bool initialized() const { return gui_font != nullptr; }
 
@@ -399,6 +431,12 @@ private:
 			// focus-follows control.
 			X = margin_1; Y += unit_height_1;
 			X += repos(focus_follows.check, label_width_1 + edit_width_1, edit_height, X, Y);
+
+			// time-stretching controls.
+			X = margin_1; Y += unit_height_1;
+			X += repos(stretch.label, label_width_1, edit_height - pad_y, X, Y + pad_y) + margin_1;
+			X += repos(stretch.edit, edit_width_1, edit_height, X, Y) + margin_1;
+			X += repos(stretch.combo, edit_width_1, edit_height, X, Y);
 		}
 		void size_changed(int width, int height)
 		{
@@ -488,6 +526,23 @@ private:
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::focus_follows_check), hinst, nullptr);
 
+		// time-stretch controls.
+		ctrl.stretch.label = ::CreateWindowExW(
+			0, WC_STATICW, L"長さの調整:",
+			WS_VISIBLE | WS_CHILD | SS_SIMPLE,
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			root, id(ctrl_ids::stretch_label), hinst, nullptr);
+		ctrl.stretch.combo = ::CreateWindowExW(
+			0, WC_COMBOBOXW, L"",
+			WS_VISIBLE | WS_CHILD | CBS_DROPDOWNLIST | CBS_HASSTRINGS,
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			root, id(ctrl_ids::stretch_unit_combo), hinst, nullptr);
+		ctrl.stretch.edit = ::CreateWindowExW(
+			0, WC_EDITW, L"",
+			WS_VISIBLE | WS_CHILD | WS_BORDER | ES_RIGHT,
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			root, id(ctrl_ids::stretch_length_edit), hinst, nullptr);
+
 		// set slider properties.
 		::SendMessageW(ctrl.page_rate.slider, TBM_SETRANGE, TRUE, MAKELPARAM(
 			static_cast<int>(settings.search.page_rate_min * ctrl.page_rate.slider_resolution),
@@ -495,7 +550,7 @@ private:
 		::SendMessageW(ctrl.page_rate.slider, TBM_SETTICFREQ,
 			ctrl.page_rate.slider_resolution / ctrl.page_rate.slider_tick_count, 0);
 		::SendMessageW(ctrl.page_rate.slider, TBM_SETPOS, TRUE,
-			static_cast<int>(std::round(settings.search.page_rate * ctrl.page_rate.slider_resolution)));
+			std::lround(settings.search.page_rate * ctrl.page_rate.slider_resolution));
 
 		// set spin properties.
 		::SendMessageW(ctrl.bpm_div.spin, UDM_SETRANGE32, settings.search.bpm_grid_div_min, settings.search.bpm_grid_div_max);
@@ -505,6 +560,11 @@ private:
 		::SendMessageW(ctrl.suppress_shift.check, BM_SETCHECK, settings.search.suppress_shift ? BST_CHECKED : BST_UNCHECKED, 0);
 		::SendMessageW(ctrl.focus_follows.check, BM_SETCHECK, settings.search.focus_follows ? BST_CHECKED : BST_UNCHECKED, 0);
 
+		// set combo box items and selection.
+		::SendMessageW(ctrl.stretch.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(L"秒"));
+		::SendMessageW(ctrl.stretch.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(L"フレーム"));
+		::SendMessageW(ctrl.stretch.combo, CB_SETCURSEL, static_cast<WPARAM>(settings.stretch.unit), 0);
+
 		// set fonts.
 		for (HWND control : {
 			ctrl.page_rate.label,
@@ -513,6 +573,9 @@ private:
 				ctrl.bpm_div.edit,
 				ctrl.suppress_shift.check,
 				ctrl.focus_follows.check,
+				ctrl.stretch.label,
+				ctrl.stretch.combo,
+				ctrl.stretch.edit,
 		}) ::SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(ctrl.gui_font), TRUE);
 
 		// set subclass procedures for tab-navigation.
@@ -522,6 +585,9 @@ private:
 				ctrl.bpm_div.edit,
 				ctrl.suppress_shift.check,
 				ctrl.focus_follows.check,
+				ctrl.stretch.label,
+				ctrl.stretch.combo,
+				ctrl.stretch.edit,
 		}) ::SetWindowSubclass(control, tab_navigation_proc, reinterpret_cast<UINT_PTR>(this), {});
 
 		// initialize the layout.
@@ -529,6 +595,7 @@ private:
 
 		// first sync.
 		sync_page_rate(true);
+		sync_stretch_time(false, true);
 
 		// logging.
 		logging::verbose(L"Created controls on the client window.");
@@ -605,7 +672,7 @@ private:
 
 			// update slider.
 			::SendMessageW(ctrl.page_rate.slider, TBM_SETPOS, TRUE,
-				static_cast<LPARAM>(std::round(val * ctrl.page_rate.slider_resolution)));
+				std::lround(val * ctrl.page_rate.slider_resolution));
 
 			// re-format the text.
 			sync_page_rate(true);
@@ -654,6 +721,80 @@ private:
 		logging::verbose(L"Settings synchronized: settings.search.focus_follows.");
 	}
 
+	void sync_stretch_time(bool from_combo, bool reset) const
+	{
+		if (reset) {
+			// set the controls to the current setting value.
+			wchar_t buf[16];
+			switch (settings.stretch.unit) {
+			case Settings::time_unit::second: default:
+			{
+				::swprintf_s(buf, L"%.3f", settings.stretch.length);
+				break;
+			}
+			case Settings::time_unit::frame:
+			{
+				::swprintf_s(buf, L"%d", std::lround(settings.stretch.length));
+				break;
+			}
+			}
+
+			// update edit box and combo box.
+			::SetWindowTextW(ctrl.stretch.edit, buf);
+			::SendMessageW(ctrl.stretch.combo, CB_SETCURSEL, static_cast<WPARAM>(settings.stretch.unit), 0);
+		}
+		else if (from_combo) {
+			// time unit combo box changed.
+			auto sel = static_cast<Settings::time_unit>(::SendMessageW(ctrl.stretch.combo, CB_GETCURSEL, 0, 0));
+			switch (sel) {
+			case Settings::time_unit::second: case Settings::time_unit::frame: break;
+			default: sel = settings.stretch.unit; break; // invalid selection, revert to previous.
+			}
+			if (sel != settings.stretch.unit) {
+				settings.stretch.unit = sel;
+
+				// convert time units.
+				auto const info = get_edit_info();
+				switch (settings.stretch.unit) {
+				case Settings::time_unit::second: default:
+				{
+					// frame->second conversion.
+					settings.stretch.length = std::round(settings.stretch.length) * info.scale / info.rate;
+					break;
+				}
+				case Settings::time_unit::frame:
+				{
+					// second->frame conversion.
+					settings.stretch.length = std::round(settings.stretch.length * info.rate / info.scale);
+				}
+				}
+				
+				// update the controls.
+				sync_stretch_time(false, true);
+
+				// logging.
+				logging::verbose(L"Settings synchronized: settings.stretch.unit.");
+			}
+		}
+		else {
+			// time-stretching edit changed.
+			wchar_t buf[16]; wchar_t* buf_end;
+			::GetWindowTextW(ctrl.stretch.edit, buf, static_cast<int>(std::size(buf)));
+			double val = std::wcstod(buf, &buf_end);
+			if (*buf_end != L'\0' || std::isinf(val)) {
+				// parsing failed.
+				sync_stretch_time(false, true);
+				return;
+			}
+
+			val = std::clamp(val, settings.stretch.length_min, settings.stretch.length_max);
+			settings.stretch.length = val;
+
+			// logging.
+			logging::verbose(L"Settings synchronized: settings.stretch.length.");
+		}
+	}
+
 	static LRESULT CALLBACK tab_navigation_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id, DWORD_PTR data)
 	{
 		switch (message) {
@@ -670,6 +811,8 @@ private:
 					that->ctrl.bpm_div.edit,
 					that->ctrl.suppress_shift.check,
 					that->ctrl.focus_follows.check,
+					that->ctrl.stretch.combo,
+					that->ctrl.stretch.edit,
 				};
 				size_t i = std::find(std::begin(controls), std::end(controls), hwnd) - std::begin(controls);
 				if (i >= std::size(controls)) [[unlikely]] break; // not found.
@@ -725,7 +868,7 @@ private:
 
 			// setup polling timer.
 			::SetTimer(root, ctrl_ids::timer_cursor_poll,
-				static_cast<uint32_t>(std::round(1000 * settings.cursor_undo.polling_period)), nullptr);
+				static_cast<uint32_t>(std::lround(1000 * settings.cursor_undo.polling_period)), nullptr);
 			return 0;
 		}
 		case WM_NCDESTROY:
@@ -830,6 +973,28 @@ private:
 				}
 				break;
 			}
+			case ctrl_ids::stretch_length_edit:
+			{
+				switch (HIWORD(wparam)) {
+				case EN_KILLFOCUS:
+				{
+					sync_stretch_time(false, false);
+					return 0;
+				}
+				}
+				break;
+			}
+			case ctrl_ids::stretch_unit_combo:
+			{
+				switch (HIWORD(wparam)) {
+				case CBN_SELCHANGE:
+				{
+					sync_stretch_time(true, false);
+					return 0;
+				}
+				}
+				break;
+			}
 			}
 			break;
 		}
@@ -865,15 +1030,17 @@ private:
 ////////////////////////////////
 // timeline searching functions.
 ////////////////////////////////
-static std::vector<int> find_midpoints(std::string_view const& alias)
+static std::vector<int> find_midpoints(std::string_view const& alias, size_t* data_start = nullptr, size_t* data_end = nullptr)
 {
 	constexpr std::string_view token1 = "\nframe=", token2 = "\n";
 	if (auto pos = alias.find(token1, 0);
 		pos != alias.npos) {
 		auto l = alias.substr(pos + token1.size());
 		l = l.substr(0, l.find(token2, 0));
+		if (data_start != nullptr) *data_start = pos + token1.size();
+		if (data_end != nullptr) *data_end = pos + token1.size() + l.size();
 
-		auto const* p = reinterpret_cast<char const*>(&*l.begin());
+		auto const* p = &*l.begin();
 		auto const* const p_end = p + l.size();
 		std::vector<int> ret{};
 		while (p < p_end) {
@@ -1123,7 +1290,7 @@ static void move_scene_core(EDIT_SECTION* edit, bool forward, bool allow_midpt)
 static void move_per_page(EDIT_SECTION* edit, double rate)
 {
 	// move by page.
-	int const delta = static_cast<int>(std::round(edit->info->display_frame_num * rate));
+	int const delta = std::lround(edit->info->display_frame_num * rate);
 	move_frame_wrap(edit, edit->info->layer, edit->info->frame + delta);
 }
 
@@ -1157,7 +1324,7 @@ static void move_to_timeline_center(EDIT_SECTION* edit)
 ////////////////////////////////
 static void scroll_horiz_per_page(EDIT_SECTION* edit, double rate)
 {
-	int const delta = static_cast<int>(std::round(edit->info->display_frame_num * rate));
+	int const delta = std::lround(edit->info->display_frame_num * rate);
 	if (delta != 0)
 		edit->set_display_layer_frame(edit->info->display_layer_start, edit->info->display_frame_start + delta);
 }
@@ -1568,7 +1735,7 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 	if (moved_count + left_behind > 0) {
 		constexpr std::wstring_view
 			pat1 = L"Moved %d object(s).", pat2 = L" (%d left behind.)";
-		constexpr size_t len_num = 11; // "-2147483648"
+		constexpr size_t len_num = std::wstring_view{ L"-2147483648" }.size();
 		wchar_t buf[std::bit_ceil(pat1.size() + pat2.size() + 2 * (len_num - 2) + 1)];
 		auto const len = ::swprintf_s(buf, pat1.data(), moved_count);
 		if (left_behind > 0) {
@@ -1578,6 +1745,121 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 		else logging::info(buf);
 	}
 	else logging::info(L"Found no space to move the object(s).");
+}
+
+////////////////////////////////
+// time stretching operations.
+////////////////////////////////
+std::string time_changed_object(std::string_view const& alias, int pos_start, int pos_end)
+{
+	size_t data_start, data_end;
+	auto midpoints = find_midpoints(alias, &data_start, &data_end);
+	if (midpoints.size() < 2) return "";
+
+	if (int const adj_pos_start = std::min(std::max(pos_start, 0), midpoints[1] - 1),
+		adj_pos_end = std::max(pos_end - 1,
+			midpoints[midpoints.size() - 2] + (midpoints.size() == 2 ? 0 : 1));
+		adj_pos_start == midpoints.front() && adj_pos_end == midpoints.back()) return ""; // no change.
+	else {
+		midpoints.front() = adj_pos_start;
+		midpoints.back() = adj_pos_end;
+	}
+
+
+	std::string ret{};
+	ret.resize_and_overwrite(alias.size() + 32, [&](char* buf, size_t buf_size) -> size_t
+	{
+		// copy the part before the frame data.
+		std::memcpy(buf, alias.data(), data_start);
+
+		// write comma-separated frame data.
+		size_t pos = data_start;
+		for (auto const& f : midpoints) {
+			char buf_frame[16];
+			auto const len = ::sprintf_s(buf_frame, "%d,", f);
+			std::memcpy(buf + pos, buf_frame, len);
+			pos += len;
+		}
+		pos--; // remove the last comma.
+
+		// copy the part after the frame data.
+		std::memcpy(buf + pos, alias.data() + data_end, alias.size() - data_end);
+		pos += alias.size() - data_end;
+		return pos;
+	});
+
+	return ret;
+}
+
+static int calc_stretched_frame(int frame, double length, EDIT_INFO const* info)
+{
+	switch (settings.stretch.unit) {
+	case Settings::time_unit::second: default:
+		return std::lround(frame + length * info->rate / info->scale);
+	case Settings::time_unit::frame:
+		return frame + std::lround(length);
+	}
+}
+
+static void stretch_selected_objects(EDIT_SECTION* edit, bool forward)
+{
+	std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> targets{};
+
+	// collect target objects.
+	if (int const n = edit->get_selected_object_num(); n > 0) {
+		for (int i = 0; i < n; i++)
+			targets.emplace_back(edit->get_selected_object(i), OBJECT_LAYER_FRAME{});
+	}
+	else if (auto const obj = edit->get_focus_object(); obj != nullptr)
+		targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
+	if (targets.empty()) return; // no operation.
+
+	// get their positions.
+	for (auto& [obj, pos] : targets)
+		pos = edit->get_object_layer_frame(obj);
+
+	// then move the starting and ending positions.
+	uint32_t stretched_count = 0;
+	for (auto const& [obj, pos] : targets) {
+		int new_start = pos.start, new_end = pos.end + 1;
+
+		// stretch the edge.
+		if (forward) {
+			new_end = std::max(calc_stretched_frame(new_end, settings.stretch.length, edit->info), new_start + 1);
+
+			// hit-test with other objects.
+			auto const [o, s, e] = find_next_obj(edit, pos.layer, pos.end + 2);
+			if (o != nullptr && s < new_end) new_end = s;
+		}
+		else {
+			new_start = std::min(calc_stretched_frame(new_start, -settings.stretch.length, edit->info), new_end - 1);
+
+			// hit-test with other objects.
+			auto const [o, s, e] = find_prev_obj(edit, pos.layer, pos.start - 1);
+			if (o != nullptr && e > new_start) new_start = e;
+		}
+
+		// try constructing a new alias.
+		auto const alias = time_changed_object(edit->get_object_alias(obj), new_start, new_end);
+		if (alias.empty()) continue; // cannot stretch.
+
+		// then replace the object with the new alias.
+		edit->delete_object(obj);
+		edit->create_object_from_alias(alias.c_str(), pos.layer, new_start, new_end - 1 - new_start);
+
+		stretched_count++;
+	}
+
+	// output an information message.
+	if (stretched_count > 0) {
+		constexpr std::wstring_view
+			pat = L"Stretched %d object(s).";
+		constexpr size_t len_num = std::wstring_view{ L"-2147483648" }.size();
+		wchar_t buf[std::bit_ceil(pat.size() + (len_num - 2) + 1)];
+		auto const len = ::swprintf_s(buf, pat.data(), stretched_count);
+		logging::info(buf);
+	}
+	else logging::info(L"Found no space to stretch the object(s).");
 }
 
 
@@ -1887,11 +2169,24 @@ constexpr struct {
 	}
 	},
 
+	// object stretching menu items.
+	{ NAME(L"選択オブジェクトの始点を伸ばす"), [](EDIT_SECTION* edit)
+	{
+		stretch_selected_objects(edit, false);
+	}
+	},
+	{ NAME(L"選択オブジェクトの終点を伸ばす"), [](EDIT_SECTION* edit)
+	{
+		stretch_selected_objects(edit, true);
+	}
+	},
+
 	// cursor undo menu items.
 	{ NAME(L"カーソル位置を元に戻す"), &cursor_undo },
 	{ NAME(L"カーソル位置をやり直す"), &cursor_redo },
 },
 obj_menu_items[] = {
+	// object moving menu items.
 	{ L"左に選択オブジェクトを詰める", [](EDIT_SECTION* edit)
 	{
 		move_selected_objects(edit, Direction::Left);
@@ -1900,6 +2195,18 @@ obj_menu_items[] = {
 	{ L"右に選択オブジェクトを詰める", [](EDIT_SECTION* edit)
 	{
 		move_selected_objects(edit, Direction::Right);
+	}
+	},
+
+	// object stretching menu items.
+	{ L"選択オブジェクトの始点を伸ばす", [](EDIT_SECTION* edit)
+	{
+		stretch_selected_objects(edit, false);
+	}
+	},
+	{ L"選択オブジェクトの終点を伸ばす", [](EDIT_SECTION* edit)
+	{
+		stretch_selected_objects(edit, true);
 	}
 	},
 };
