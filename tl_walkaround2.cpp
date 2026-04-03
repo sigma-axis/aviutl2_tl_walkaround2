@@ -33,6 +33,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #pragma comment(lib, "comctl32")
 
 #include "plugin2.h"
+#include "config2.h"
 #include "logging.hpp"
 namespace logging = AviUtl2::logging;
 
@@ -41,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.40-test1 (for beta39)"
+#define PLUGIN_VERSION	"v1.40-test2 (for beta39)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta39"
 constexpr uint32_t least_aviutl2_ver_num = 2003900;
@@ -51,7 +52,8 @@ constexpr uint32_t least_aviutl2_ver_num = 2003900;
 // globals.
 ////////////////////////////////
 constinit HMODULE dll_hinst = nullptr;
-constinit EDIT_HANDLE* edit_handle = nullptr;
+constinit EDIT_HANDLE const* edit_handle = nullptr;
+constinit CONFIG_HANDLE* config_handle = nullptr;
 constinit struct Settings {
 #define decl_prop(type, name, def)	\
 	type name = name##_def; \
@@ -278,6 +280,17 @@ public:
 
 undo_bundle<int, int> cursor_undo_queues{ 0 };
 
+template<class CharT>
+struct string_pool {
+	std::vector<std::basic_string<CharT>> pool{};
+	CharT const* operator()(std::basic_string<CharT>&& str)
+	{
+		return pool.emplace_back(std::move(str)).c_str();
+	}
+};
+
+string_pool<wchar_t> wstr_pool{};
+
 
 ////////////////////////////////
 // helper functions.
@@ -319,6 +332,13 @@ static EDIT_INFO get_edit_info()
 	edit_handle->get_edit_info(&info, sizeof(info));
 	return info;
 };
+
+static wchar_t const* translate(wchar_t const* text, wchar_t const* section = nullptr)
+{
+	return config_handle->get_language_text(config_handle,
+		section != nullptr ? section :
+		(L"Plugin." PLUGIN_NAME), text);
+}
 
 
 ////////////////////////////////
@@ -380,6 +400,7 @@ private:
 			HWND edit = nullptr;
 		} stretch;
 		HFONT gui_font = nullptr;
+		int label_width = -1;
 		bool initialized() const { return gui_font != nullptr; }
 
 		void layout(HWND root)
@@ -387,7 +408,6 @@ private:
 			constexpr int margin_0 = 6,
 				slider_height_0 = 32,
 				unit_height_0 = 26,
-				label_width_0 = 80,
 				edit_width_0 = 56;
 
 			auto const dpi = ::GetDpiForWindow(root);
@@ -396,7 +416,8 @@ private:
 			int const edit_height = font_height(root) + 2 * pad_y;
 
 			auto rescale = [dpi](int x) -> int { return x * dpi / 96; };
-			auto repos = [](HWND ctrl, int w, int h, int x, int y) {
+			auto repos = [](HWND ctrl, int w, int h, int x, int y) -> int
+			{
 				::SetWindowPos(ctrl, nullptr, x, y, w, h,
 					SWP_NOZORDER | SWP_NOACTIVATE);
 				return w;
@@ -405,12 +426,11 @@ private:
 			int const
 				unit_height_1 = rescale(unit_height_0),
 				slider_height_1 = rescale(slider_height_0),
-				label_width_1 = rescale(label_width_0),
 				edit_width_1 = rescale(edit_width_0);
 
 			// page-rate controls.
 			int X = margin_1, Y = margin_1;
-			X += repos(page_rate.label, label_width_1, edit_height - pad_y, X, Y + pad_y) + margin_1;
+			X += repos(page_rate.label, label_width, edit_height - pad_y, X, Y + pad_y) + margin_1;
 			X += repos(page_rate.edit, edit_width_1, edit_height, X, Y) + margin_1;
 			pos_slider.left = X; pos_slider.top = Y - margin_1 / 2;
 			pos_slider.right = client.right - margin_1;
@@ -420,21 +440,21 @@ private:
 
 			// bpm-grid-division controls.
 			X = margin_1; Y += unit_height_1;
-			X += repos(bpm_div.label, label_width_1, edit_height - pad_y, X, Y + pad_y) + margin_1;
+			X += repos(bpm_div.label, label_width, edit_height - pad_y, X, Y + pad_y) + margin_1;
 			X += repos(bpm_div.edit, edit_width_1 - edit_height, edit_height, X, Y);
 			repos(bpm_div.spin, edit_height, edit_height, X, Y);
 
 			// suppress-shift control.
 			X = margin_1; Y += unit_height_1;
-			X += repos(suppress_shift.check, label_width_1 + edit_width_1, edit_height, X, Y);
+			X += repos(suppress_shift.check, client.right - 2 * margin_1, edit_height, X, Y);
 
 			// focus-follows control.
 			X = margin_1; Y += unit_height_1;
-			X += repos(focus_follows.check, label_width_1 + edit_width_1, edit_height, X, Y);
+			X += repos(focus_follows.check, client.right - 2 * margin_1, edit_height, X, Y);
 
 			// time-stretching controls.
 			X = margin_1; Y += unit_height_1;
-			X += repos(stretch.label, label_width_1, edit_height - pad_y, X, Y + pad_y) + margin_1;
+			X += repos(stretch.label, label_width, edit_height - pad_y, X, Y + pad_y) + margin_1;
 			X += repos(stretch.edit, edit_width_1, edit_height, X, Y) + margin_1;
 			X += repos(stretch.combo, edit_width_1, edit_height, X, Y);
 		}
@@ -477,10 +497,36 @@ private:
 		::SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, 0, &ncm, 0);
 		ctrl.gui_font = ::CreateFontIndirectW(&ncm.lfCaptionFont);
 
+		struct text_measurer {
+			HWND root; HFONT font;
+			HDC dc; HGDIOBJ old_font;
+			int& max_width;
+			text_measurer(HWND root, HFONT font, int& max_width) : root{ root }, font{ font }, max_width{ max_width }
+			{
+				dc = ::GetDC(root);
+				old_font = ::SelectObject(dc, font);
+			}
+			~text_measurer()
+			{
+				::SelectObject(dc, old_font);
+				::ReleaseDC(root, dc);
+			}
+
+			wchar_t const* operator()(wchar_t const* text) const
+			{
+				auto text2 = translate(text);
+				SIZE sz;
+				::GetTextExtentPoint32W(dc, text2, static_cast<int>(wcslen(text2)), &sz);
+				if (sz.cx > max_width) max_width = sz.cx;
+				return text2;
+			}
+		};
+		text_measurer tm{ root, ctrl.gui_font, ctrl.label_width };
+
 		// create controls.
 		// page-rate controls.
 		ctrl.page_rate.label = ::CreateWindowExW(
-			0, WC_STATICW, L"移動量(%):",
+			0, WC_STATICW, tm(L"移動量(%):"),
 			WS_VISIBLE | WS_CHILD | SS_SIMPLE,
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::page_rate_label), hinst, nullptr);
@@ -497,7 +543,7 @@ private:
 
 		// bpm-grid-division controls.
 		ctrl.bpm_div.label = ::CreateWindowExW(
-			0, WC_STATICW, L"BPM移動分母:",
+			0, WC_STATICW, tm(L"BPM移動分母:"),
 			WS_VISIBLE | WS_CHILD | SS_SIMPLE,
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::bpm_div_label), hinst, nullptr);
@@ -514,21 +560,21 @@ private:
 
 		// suppress-shift control.
 		ctrl.suppress_shift.check = ::CreateWindowExW(
-			0, WC_BUTTONW, L"範囲選択を抑制",
+			0, WC_BUTTONW, translate(L"範囲選択を抑制"),
 			WS_VISIBLE | WS_CHILD | BS_CHECKBOX | BS_AUTOCHECKBOX,
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::suppress_shift_check), hinst, nullptr);
 
 		// focus-follows control.
 		ctrl.focus_follows.check = ::CreateWindowExW(
-			0, WC_BUTTONW, L"選択オブジェクトの追従",
+			0, WC_BUTTONW, translate(L"選択オブジェクトの追従"),
 			WS_VISIBLE | WS_CHILD | BS_CHECKBOX | BS_AUTOCHECKBOX,
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::focus_follows_check), hinst, nullptr);
 
 		// time-stretch controls.
 		ctrl.stretch.label = ::CreateWindowExW(
-			0, WC_STATICW, L"長さの調整:",
+			0, WC_STATICW, tm(L"長さの調整:"),
 			WS_VISIBLE | WS_CHILD | SS_SIMPLE,
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::stretch_label), hinst, nullptr);
@@ -561,8 +607,8 @@ private:
 		::SendMessageW(ctrl.focus_follows.check, BM_SETCHECK, settings.search.focus_follows ? BST_CHECKED : BST_UNCHECKED, 0);
 
 		// set combo box items and selection.
-		::SendMessageW(ctrl.stretch.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(L"秒"));
-		::SendMessageW(ctrl.stretch.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(L"フレーム"));
+		::SendMessageW(ctrl.stretch.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(translate(L"秒")));
+		::SendMessageW(ctrl.stretch.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(translate(L"フレーム")));
 		::SendMessageW(ctrl.stretch.combo, CB_SETCURSEL, static_cast<WPARAM>(settings.stretch.unit), 0);
 
 		// set fonts.
@@ -1765,28 +1811,22 @@ std::string time_changed_object(std::string_view const& alias, int pos_start, in
 		midpoints.back() = adj_pos_end;
 	}
 
-
 	std::string ret{};
-	ret.resize_and_overwrite(alias.size() + 32, [&](char* buf, size_t buf_size) -> size_t
-	{
-		// copy the part before the frame data.
-		std::memcpy(buf, alias.data(), data_start);
+	ret.reserve(alias.size() + 32); // up to two integers may change. 32 (>= 11 x 2) is enough.
+	
+	// copy the part before the frame data.
+	ret.append(alias.data(), data_start);
 
-		// write comma-separated frame data.
-		size_t pos = data_start;
-		for (auto const& f : midpoints) {
-			char buf_frame[16];
-			auto const len = ::sprintf_s(buf_frame, "%d,", f);
-			std::memcpy(buf + pos, buf_frame, len);
-			pos += len;
-		}
-		pos--; // remove the last comma.
+	// write comma-separated frame data.
+	for (auto const& f : midpoints) {
+		char buf_frame[16];
+		auto const len = ::sprintf_s(buf_frame, "%d,", f);
+		ret.append(buf_frame, len);
+	}
+	ret.pop_back(); // remove the last comma.
 
-		// copy the part after the frame data.
-		std::memcpy(buf + pos, alias.data() + data_end, alias.size() - data_end);
-		pos += alias.size() - data_end;
-		return pos;
-	});
+	// copy the part after the frame data.
+	ret.append(alias.data() + data_end, alias.size() - data_end);
 
 	return ret;
 }
@@ -1795,7 +1835,7 @@ static int calc_stretched_frame(int frame, double length, EDIT_INFO const* info)
 {
 	switch (settings.stretch.unit) {
 	case Settings::time_unit::second: default:
-		return std::lround(frame + length * info->rate / info->scale);
+		return frame + std::lround(length * info->rate / info->scale);
 	case Settings::time_unit::frame:
 		return frame + std::lround(length);
 	}
@@ -1905,234 +1945,233 @@ static void on_scene_changed(EDIT_SECTION* edit)
 ////////////////////////////////
 // define menu items.
 ////////////////////////////////
-#define NAME(name)	PLUGIN_NAME "\\" name
 constexpr struct {
 	wchar_t const* name;
 	void (*callback)(EDIT_SECTION* edit);
 } edit_menu_items[] = {
-	{ NAME(L"左の中間点(レイヤー)"), [](EDIT_SECTION* edit)
+	{ L"左の中間点(レイヤー)", [](EDIT_SECTION* edit)
 	{
 		move_layer_core(edit, false, true);
 	}
 	},
-	{ NAME(L"右の中間点(レイヤー)"), [](EDIT_SECTION* edit)
+	{ L"右の中間点(レイヤー)", [](EDIT_SECTION* edit)
 	{
 		move_layer_core(edit, true, true);
 	}
 	},
-	{ NAME(L"左の境界(レイヤー)"), [](EDIT_SECTION* edit)
+	{ L"左の境界(レイヤー)", [](EDIT_SECTION* edit)
 	{
 		move_layer_core(edit, false, false);
 	}
 	},
-	{ NAME(L"右の境界(レイヤー)"), [](EDIT_SECTION* edit)
+	{ L"右の境界(レイヤー)", [](EDIT_SECTION* edit)
 	{
 		move_layer_core(edit, true, false);
 	}
 	},
-	{ NAME(L"左の中間点(シーン)"), [](EDIT_SECTION* edit)
+	{ L"左の中間点(シーン)", [](EDIT_SECTION* edit)
 	{
 		move_scene_core(edit, false, true);
 	}
 	},
-	{ NAME(L"右の中間点(シーン)"), [](EDIT_SECTION* edit)
+	{ L"右の中間点(シーン)", [](EDIT_SECTION* edit)
 	{
 		move_scene_core(edit, true, true);
 	}
 	},
-	{ NAME(L"左の境界(シーン)"), [](EDIT_SECTION* edit)
+	{ L"左の境界(シーン)", [](EDIT_SECTION* edit)
 	{
 		move_scene_core(edit, false, false);
 	}
 	},
-	{ NAME(L"右の境界(シーン)"), [](EDIT_SECTION* edit)
+	{ L"右の境界(シーン)", [](EDIT_SECTION* edit)
 	{
 		move_scene_core(edit, true, false);
 	}
 	},
-	{ NAME(L"左へ1ページ移動"), [](EDIT_SECTION* edit)
+	{ L"左へ1ページ移動", [](EDIT_SECTION* edit)
 	{
 		move_per_page(edit, -1.0);
 	}
 	},
-	{ NAME(L"右へ1ページ移動"), [](EDIT_SECTION* edit)
+	{ L"右へ1ページ移動", [](EDIT_SECTION* edit)
 	{
 		move_per_page(edit, +1.0);
 	}
 	},
-	{ NAME(L"左へ一定量移動"), [](EDIT_SECTION* edit)
+	{ L"左へ一定量移動", [](EDIT_SECTION* edit)
 	{
 		move_per_page(edit, -settings.search.page_rate);
 	}
 	},
-	{ NAME(L"右へ一定量移動"), [](EDIT_SECTION* edit)
+	{ L"右へ一定量移動", [](EDIT_SECTION* edit)
 	{
 		move_per_page(edit, +settings.search.page_rate);
 	}
 	},
-	{ NAME(L"選択オブジェクトへ移動"), [](EDIT_SECTION* edit)
+	{ L"選択オブジェクトへ移動", [](EDIT_SECTION* edit)
 	{
 		move_to_focused(edit, true, true);
 	}
 	},
-	{ NAME(L"選択オブジェクトへ移動(フレームのみ)"), [](EDIT_SECTION* edit)
+	{ L"選択オブジェクトへ移動(フレームのみ)", [](EDIT_SECTION* edit)
 	{
 		move_to_focused(edit, false, true);
 	}
 	},
-	{ NAME(L"選択オブジェクトへ移動(レイヤーのみ)"), [](EDIT_SECTION* edit)
+	{ L"選択オブジェクトへ移動(レイヤーのみ)", [](EDIT_SECTION* edit)
 	{
 		move_to_focused(edit, true, false);
 	}
 	},
-	{ NAME(L"タイムラインの中央へ移動"), &move_to_timeline_center },
+	{ L"タイムラインの中央へ移動", &move_to_timeline_center },
 
-	{ NAME(L"左へ1ページスクロール"), [](EDIT_SECTION* edit)
+	{ L"左へ1ページスクロール", [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_per_page(edit, -1.0);
 	}
 	},
-	{ NAME(L"右へ1ページスクロール"), [](EDIT_SECTION* edit)
+	{ L"右へ1ページスクロール", [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_per_page(edit, +1.0);
 	}
 	},
-	{ NAME(L"左へ一定量スクロール"), [](EDIT_SECTION* edit)
+	{ L"左へ一定量スクロール", [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_per_page(edit, -settings.search.page_rate);
 	}
 	},
-	{ NAME(L"右へ一定量スクロール"), [](EDIT_SECTION* edit)
+	{ L"右へ一定量スクロール", [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_per_page(edit, +settings.search.page_rate);
 	}
 	},
-	{ NAME(L"先頭へスクロール"), [](EDIT_SECTION* edit)
+	{ L"先頭へスクロール", [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_to_start_end(edit, true);
 	}
 	},
-	{ NAME(L"最後へスクロール"), [](EDIT_SECTION* edit)
+	{ L"最後へスクロール", [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_to_start_end(edit, false);
 	}
 	},
-	{ NAME(L"カーソル位置へスクロール"), &scroll_horiz_to_cursor },
-	{ NAME(L"選択オブジェクトへスクロール"), &scroll_to_focused },
+	{ L"カーソル位置へスクロール", &scroll_horiz_to_cursor },
+	{ L"選択オブジェクトへスクロール", &scroll_to_focused },
 
-	{ NAME(L"上へスクロール"), [](EDIT_SECTION* edit)
+	{ L"上へスクロール", [](EDIT_SECTION* edit)
 	{
 		edit->set_display_layer_frame(
 			edit->info->display_layer_start - 1,
 			edit->info->display_frame_start);
 	}
 	},
-	{ NAME(L"下へスクロール"), [](EDIT_SECTION* edit)
+	{ L"下へスクロール", [](EDIT_SECTION* edit)
 	{
 		edit->set_display_layer_frame(
 			edit->info->display_layer_start + 1,
 			edit->info->display_frame_start);
 	}
 	},
-	{ NAME(L"上へ1ページスクロール"), [](EDIT_SECTION* edit)
+	{ L"上へ1ページスクロール", [](EDIT_SECTION* edit)
 	{
 		edit->set_display_layer_frame(
 			edit->info->display_layer_start - edit->info->display_layer_num,
 			edit->info->display_frame_start);
 	}
 	},
-	{ NAME(L"下へ1ページスクロール"), [](EDIT_SECTION* edit)
+	{ L"下へ1ページスクロール", [](EDIT_SECTION* edit)
 	{
 		edit->set_display_layer_frame(
 			edit->info->display_layer_start + edit->info->display_layer_num,
 			edit->info->display_frame_start);
 	}
 	},
-	{ NAME(L"最上端へスクロール"), [](EDIT_SECTION* edit)
+	{ L"最上端へスクロール", [](EDIT_SECTION* edit)
 	{
 		scroll_vert_to_top_bottom(edit, true);
 	}
 	},
-	{ NAME(L"最下端へスクロール"), [](EDIT_SECTION* edit)
+	{ L"最下端へスクロール", [](EDIT_SECTION* edit)
 	{
 		scroll_vert_to_top_bottom(edit, false);
 	}
 	},
-	{ NAME(L"選択レイヤーへスクロール"), &scroll_vert_to_selected },
+	{ L"選択レイヤーへスクロール", &scroll_vert_to_selected },
 
-	{ NAME(L"現在フレームのオブジェクトを選択(逆順)"), &focus_cursor_object_rev },
-	{ NAME(L"左のオブジェクトを選択"), [](EDIT_SECTION* edit)
+	{ L"現在フレームのオブジェクトを選択(逆順)", &focus_cursor_object_rev },
+	{ L"左のオブジェクトを選択", [](EDIT_SECTION* edit)
 	{
 		focus_left_right_object(edit, false);
 	}
 	},
-	{ NAME(L"右のオブジェクトを選択"), [](EDIT_SECTION* edit)
+	{ L"右のオブジェクトを選択", [](EDIT_SECTION* edit)
 	{
 		focus_left_right_object(edit, true);
 	}
 	},
-	{ NAME(L"上のオブジェクトを選択"), [](EDIT_SECTION* edit)
+	{ L"上のオブジェクトを選択", [](EDIT_SECTION* edit)
 	{
 		focus_above_below_layer_object(edit, false);
 	}
 	},
-	{ NAME(L"下のオブジェクトを選択"), [](EDIT_SECTION* edit)
+	{ L"下のオブジェクトを選択", [](EDIT_SECTION* edit)
 	{
 		focus_above_below_layer_object(edit, true);
 	}
 	},
-	{ NAME(L"上のレイヤーを選択"), [](EDIT_SECTION* edit)
+	{ L"上のレイヤーを選択", [](EDIT_SECTION* edit)
 	{
 		edit->set_cursor_layer_frame(edit->info->layer - 1, edit->info->frame);
 	}
 	},
-	{ NAME(L"下のレイヤーを選択"), [](EDIT_SECTION* edit)
+	{ L"下のレイヤーを選択", [](EDIT_SECTION* edit)
 	{
 		edit->set_cursor_layer_frame(edit->info->layer + 1, edit->info->frame);
 	}
 	},
 
-	{ NAME(L"左の小節線へ移動(BPM)"), [](EDIT_SECTION* edit)
+	{ L"左の小節線へ移動(BPM)", [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, 1, edit->info->grid_bpm_beat, false);
 	}
 	},
-	{ NAME(L"右の小節線へ移動(BPM)"), [](EDIT_SECTION* edit)
+	{ L"右の小節線へ移動(BPM)", [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, 1, edit->info->grid_bpm_beat, true);
 	}
 	},
-	{ NAME(L"左の拍数線へ移動(BPM)"), [](EDIT_SECTION* edit)
+	{ L"左の拍数線へ移動(BPM)", [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, 1, 1, false);
 	}
 	},
-	{ NAME(L"右の拍数線へ移動(BPM)"), [](EDIT_SECTION* edit)
+	{ L"右の拍数線へ移動(BPM)", [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, 1, 1, true);
 	}
 	},
-	{ NAME(L"左に1/N拍移動(BPM)"), [](EDIT_SECTION* edit)
+	{ L"左に1/N拍移動(BPM)", [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, settings.search.bpm_grid_div, 1, false);
 	}
 	},
-	{ NAME(L"右に1/N拍移動(BPM)"), [](EDIT_SECTION* edit)
+	{ L"右に1/N拍移動(BPM)", [](EDIT_SECTION* edit)
 	{
 		move_to_bpm_grid(edit, settings.search.bpm_grid_div, 1, true);
 	}
 	},
-	{ NAME(L"左にグリッド基準線を移動(BPM)"), [](EDIT_SECTION* edit)
+	{ L"左にグリッド基準線を移動(BPM)", [](EDIT_SECTION* edit)
 	{
 		shift_bpm_grid_offset(edit, -1);
 	}
 	},
-	{ NAME(L"右にグリッド基準線を移動(BPM)"), [](EDIT_SECTION* edit)
+	{ L"右にグリッド基準線を移動(BPM)", [](EDIT_SECTION* edit)
 	{
 		shift_bpm_grid_offset(edit, +1);
 	}
 	},
-	{ NAME(L"グリッド基準線を現在フレームに(BPM)"), [](EDIT_SECTION* edit)
+	{ L"グリッド基準線を現在フレームに(BPM)", [](EDIT_SECTION* edit)
 	{
 		Timeline_calc const tl_calc{
 			edit->info->rate,
@@ -2145,45 +2184,45 @@ constexpr struct {
 		);
 	}
 	},
-	{ NAME(L"最寄りの小節線を現在フレームに(BPM)"), &shift_bpm_grid_nearest_measure_to_cursor },
+	{ L"最寄りの小節線を現在フレームに(BPM)", &shift_bpm_grid_nearest_measure_to_cursor },
 
 	// object moving menu items.
-	{ NAME(L"左に選択オブジェクトを詰める"), [](EDIT_SECTION* edit)
+	{ L"左に選択オブジェクトを詰める", [](EDIT_SECTION* edit)
 	{
 		move_selected_objects(edit, Direction::Left);
 	}
 	},
-	{ NAME(L"右に選択オブジェクトを詰める"), [](EDIT_SECTION* edit)
+	{ L"右に選択オブジェクトを詰める", [](EDIT_SECTION* edit)
 	{
 		move_selected_objects(edit, Direction::Right);
 	}
 	},
-	{ NAME(L"上に選択オブジェクトを移動"), [](EDIT_SECTION* edit)
+	{ L"上に選択オブジェクトを移動", [](EDIT_SECTION* edit)
 	{
 		move_selected_objects(edit, Direction::Up);
 	}
 	},
-	{ NAME(L"下に選択オブジェクトを移動"), [](EDIT_SECTION* edit)
+	{ L"下に選択オブジェクトを移動", [](EDIT_SECTION* edit)
 	{
 		move_selected_objects(edit, Direction::Down);
 	}
 	},
 
 	// object stretching menu items.
-	{ NAME(L"選択オブジェクトの始点を伸ばす"), [](EDIT_SECTION* edit)
+	{ L"選択オブジェクトの始点を伸ばす", [](EDIT_SECTION* edit)
 	{
 		stretch_selected_objects(edit, false);
 	}
 	},
-	{ NAME(L"選択オブジェクトの終点を伸ばす"), [](EDIT_SECTION* edit)
+	{ L"選択オブジェクトの終点を伸ばす", [](EDIT_SECTION* edit)
 	{
 		stretch_selected_objects(edit, true);
 	}
 	},
 
 	// cursor undo menu items.
-	{ NAME(L"カーソル位置を元に戻す"), &cursor_undo },
-	{ NAME(L"カーソル位置をやり直す"), &cursor_redo },
+	{ L"カーソル位置を元に戻す", &cursor_undo },
+	{ L"カーソル位置をやり直す", &cursor_redo },
 },
 obj_menu_items[] = {
 	// object moving menu items.
@@ -2238,6 +2277,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 // exported functions.
 ////////////////////////////////
 
+// get config handle.
+extern "C" __declspec(dllexport) void InitializeConfig(CONFIG_HANDLE* config)
+{
+	config_handle = config;
+}
+
 // least version (since AviUtl2 beta33).
 extern "C" __declspec(dllexport) DWORD RequiredVersion()
 {
@@ -2287,10 +2332,11 @@ extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 	plugin_window.create_register_window(host, PLUGIN_NAME);
 
 	// register menu items.
+	std::wstring const plugin_name = translate(PLUGIN_NAME, L"Menu");
 	for (auto const& item : edit_menu_items)
-		host->register_edit_menu(item.name, item.callback);
+		host->register_edit_menu(wstr_pool(plugin_name + L"\\" + translate(item.name)), item.callback);
 	for (auto const& item : obj_menu_items)
-		host->register_object_menu(item.name, item.callback);
+		host->register_object_menu(translate(item.name), item.callback);
 
 	// register event callbacks.
 	host->register_project_load_handler(&on_load_project);
