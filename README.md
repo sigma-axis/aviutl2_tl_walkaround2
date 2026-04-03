@@ -39,6 +39,13 @@
 
 メインメニューの「表示」にも「TLショトカ移動2」が追加されています．表示されるウィンドウで，一部のコマンドの挙動を調整できます．
 
+### For non-Japanese speaking users
+
+You may be able to find language translation file for this script / plugin from [this repository](https://github.com/sigma-axis/aviutl2_translations_sigma-axis). 
+Translation files enable names, parameters and commands of the scripts / plugins to be displayed in other languages.
+
+Although, usage documentations for this script / plugin in languages other than Japanese are not available now.
+
 ##  各種コマンド
 
 ### 左/右の中間点(レイヤー)
@@ -344,6 +351,8 @@ queue_size=256
 
 1.  [BPMグリッド倍化プラグイン](https://github.com/Garech-mas/DoubleBPMGrid)を導入している場合，[「左/右にグリッド基準線を移動(BPM)」](#左右にグリッド基準線を移動bpm)などの BPM グリッド変更コマンドを使用しても，BPMグリッド倍化プラグインの GUI に変更が反映されません．一部のコマンドはBPMグリッド倍化プラグイン側で同等のものがあるため，そちらを優先して使用してください．
 
+1.  動画オブジェクトやシーンオブジェクトなどに[「選択オブジェクトの始点を伸ばす」](#選択オブジェクトの始点終点を伸ばす)のコマンドを使用した場合，動画やシーンの開始時刻は連動して変化しません．
+
 ##  改版履歴
 
 - **v1.40 (for beta39)** (2026-??-??)
@@ -351,6 +360,7 @@ queue_size=256
   - コマンド「選択オブジェクトの始点を伸ばす」「選択オブジェクトの終点を伸ばす」を追加．
     - 選択オブジェクトの始点または終点を，指定した時間分だけ伸ばします．指定時間が負の場合は縮めます．
     - レイヤー編集ウィンドウのオブジェクトを右クリックしたときの，コンテキストメニューからも実行できます．
+  - 多言語化に対応．
 
 - **v1.30 (for beta39)** (2026-04-02)
 
