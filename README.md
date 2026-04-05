@@ -40,7 +40,8 @@
 
 ### For non-Japanese speaking users
 
-You may be able to find language translation file for this script / plugin from [this repository](https://github.com/sigma-axis/aviutl2_translations_sigma-axis). 
+You may be able to find language translation file for this script / plugin from [this repository](https://github.com/sigma-axis/aviutl2_translations_sigma-axis).
+
 Translation files enable names, parameters and commands of the scripts / plugins to be displayed in other languages.
 
 Although, usage documentations for this script / plugin in languages other than Japanese are not available now.
