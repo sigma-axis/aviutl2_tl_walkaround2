@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.40 (for beta40a)"
+#define PLUGIN_VERSION	"v1.41-beta1 (for beta40a)"
 #define PLUGIN_AUTHOR	"sigma-axis"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta39"
 constexpr uint32_t least_aviutl2_ver_num = 2003900;
@@ -326,6 +326,13 @@ static bool write_key_state(uint8_t vk_code, uint8_t& state)
 	return true; // changed.
 }
 
+static void remove_messages(HWND hwnd, UINT msg_from, UINT msg_until)
+{
+	// eliminate messages from the queue.
+	for (MSG msg; ::PeekMessageW(&msg, hwnd, msg_from, msg_until, PM_REMOVE) != FALSE; );
+}
+static void remove_messages(HWND hwnd, UINT msg_from) { remove_messages(hwnd, msg_from, msg_from); }
+
 static EDIT_INFO get_edit_info()
 {
 	EDIT_INFO info;
@@ -364,8 +371,8 @@ private:
 			focus_follows_check,
 
 			stretch_label,
-			stretch_unit_combo,
 			stretch_length_edit,
+			stretch_unit_combo,
 
 			timer_cursor_poll,
 		};
@@ -396,8 +403,8 @@ private:
 		} focus_follows{};
 		struct {
 			HWND label = nullptr;
-			HWND combo = nullptr;
 			HWND edit = nullptr;
+			HWND combo = nullptr;
 		} stretch;
 		HFONT gui_font = nullptr;
 		int label_width = -1;
@@ -578,16 +585,16 @@ private:
 			WS_VISIBLE | WS_CHILD | SS_SIMPLE,
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::stretch_label), hinst, nullptr);
-		ctrl.stretch.combo = ::CreateWindowExW(
-			0, WC_COMBOBOXW, L"",
-			WS_VISIBLE | WS_CHILD | CBS_DROPDOWNLIST | CBS_HASSTRINGS,
-			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-			root, id(ctrl_ids::stretch_unit_combo), hinst, nullptr);
 		ctrl.stretch.edit = ::CreateWindowExW(
 			0, WC_EDITW, L"",
 			WS_VISIBLE | WS_CHILD | WS_BORDER | ES_RIGHT,
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::stretch_length_edit), hinst, nullptr);
+		ctrl.stretch.combo = ::CreateWindowExW(
+			0, WC_COMBOBOXW, L"",
+			WS_VISIBLE | WS_CHILD | CBS_DROPDOWNLIST | CBS_HASSTRINGS,
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			root, id(ctrl_ids::stretch_unit_combo), hinst, nullptr);
 
 		// set slider properties.
 		::SendMessageW(ctrl.page_rate.slider, TBM_SETRANGE, TRUE, MAKELPARAM(
@@ -632,8 +639,8 @@ private:
 				ctrl.suppress_shift.check,
 				ctrl.focus_follows.check,
 				ctrl.stretch.label,
-				ctrl.stretch.combo,
 				ctrl.stretch.edit,
+				ctrl.stretch.combo,
 		}) ::SetWindowSubclass(control, tab_navigation_proc, reinterpret_cast<UINT_PTR>(this), {});
 
 		// initialize the layout.
@@ -843,6 +850,8 @@ private:
 
 	static LRESULT CALLBACK tab_navigation_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id, DWORD_PTR data)
 	{
+		PluginWindow* const that = reinterpret_cast<PluginWindow*>(id);
+
 		switch (message) {
 		case WM_KEYDOWN:
 		{
@@ -850,15 +859,14 @@ private:
 			switch (wparam) {
 			case VK_TAB:
 			{
-				PluginWindow* that = reinterpret_cast<PluginWindow*>(id);
 				HWND const controls[] = {
 					that->ctrl.page_rate.edit,
 					that->ctrl.page_rate.slider,
 					that->ctrl.bpm_div.edit,
 					that->ctrl.suppress_shift.check,
 					that->ctrl.focus_follows.check,
-					that->ctrl.stretch.combo,
 					that->ctrl.stretch.edit,
+					that->ctrl.stretch.combo,
 				};
 				size_t i = std::find(std::begin(controls), std::end(controls), hwnd) - std::begin(controls);
 				if (i >= std::size(controls)) [[unlikely]] break; // not found.
@@ -868,8 +876,8 @@ private:
 				i %= std::size(controls);
 				::SetFocus(controls[i]);
 
-				// eliminate WM_CHAR message from the message queue.
-				for (MSG msg; ::PeekMessageW(&msg, hwnd, WM_CHAR, WM_CHAR, PM_REMOVE) != FALSE; );
+				// eliminate WM_CHAR messages.
+				remove_messages(hwnd, WM_CHAR);
 				return 0;
 			}
 			case VK_RETURN:
@@ -878,13 +886,22 @@ private:
 
 				// confirm the input of the text box,
 				// by sending a fake EN_KILLFOCUS notification message.
-				::SendMessageW(::GetParent(hwnd), WM_COMMAND,
+				::SendMessageW(that->root, WM_COMMAND,
 					MAKEWPARAM(::GetDlgCtrlID(hwnd), EN_KILLFOCUS),
 					reinterpret_cast<LPARAM>(hwnd));
 
-				// eliminate WM_CHAR message from the message queue.
-				for (MSG msg; ::PeekMessageW(&msg, hwnd, WM_CHAR, WM_CHAR, PM_REMOVE) != FALSE; );
+				// eliminate WM_CHAR messages.
+				remove_messages(hwnd, WM_CHAR);
 				return 0;
+			}
+			case VK_ESCAPE:
+			{
+				// set focus to the parent.
+				::SetFocus(that->root);
+
+				// eliminate WM_CHAR messages.
+				remove_messages(hwnd, WM_CHAR);
+				break;
 			}
 			}
 			break;
@@ -1063,6 +1080,17 @@ private:
 			// call the requested function.
 			auto const callback = reinterpret_cast<void(*)(uintptr_t)>(lparam);
 			if (callback != nullptr) callback(wparam);
+			return 0;
+		}
+		case WM_KEYDOWN:
+		case WM_KEYUP:
+		case WM_CHAR:
+		case WM_SYSKEYDOWN:
+		case WM_SYSKEYUP:
+		case WM_SYSCHAR:
+		{
+			// transfer to the host window.
+			::PostMessageW(edit_handle->get_host_app_window(), message, wparam, lparam);
 			return 0;
 		}
 		default:
