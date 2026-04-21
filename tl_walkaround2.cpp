@@ -43,7 +43,7 @@ namespace logging = AviUtl2::logging;
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
 #define PLUGIN_VERSION	"v1.41 (for beta40a)"
-#define PLUGIN_AUTHOR	"sigma-axis"
+#define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta39"
 constexpr uint32_t least_aviutl2_ver_num = 2003900;
 
@@ -331,7 +331,7 @@ static void remove_messages(HWND hwnd, UINT msg_from, UINT msg_until)
 	// eliminate messages from the queue.
 	for (MSG msg; ::PeekMessageW(&msg, hwnd, msg_from, msg_until, PM_REMOVE) != FALSE; );
 }
-static void remove_messages(HWND hwnd, UINT msg_from) { remove_messages(hwnd, msg_from, msg_from); }
+static void remove_messages(HWND hwnd, UINT message) { remove_messages(hwnd, message, message); }
 
 static EDIT_INFO get_edit_info()
 {
