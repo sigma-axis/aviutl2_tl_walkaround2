@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.42-beta1 (for beta47)"
+#define PLUGIN_VERSION	"v1.42-beta2 (for beta47)"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta39"
 constexpr uint32_t least_aviutl2_ver_num = 2003900;
@@ -689,6 +689,10 @@ public:
 	{
 		::PostMessageW(root, prv_mes::request_callback, param, reinterpret_cast<LPARAM>(callback));
 	}
+	void destroy() const
+	{
+		if (root != nullptr) ::DestroyWindow(root);
+	}
 
 private:
 	bool sync_page_rate(bool from_slider) const
@@ -947,6 +951,9 @@ private:
 
 			// save the setting on terminating.
 			settings.save();
+
+			// disable this object.
+			root = nullptr;
 			break;
 		}
 		// initialize and re-layout controls.
@@ -1882,7 +1889,7 @@ static void stretch_selected_objects(EDIT_SECTION* edit, bool forward)
 			auto obj = edit->get_selected_object(i);
 			targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
 			if (focused_obj == obj) focused_idx = i;
-	}
+		}
 	}
 	else if (auto const obj = edit->get_focus_object(); obj != nullptr) {
 		targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
@@ -2306,8 +2313,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	}
 	case DLL_THREAD_ATTACH:
 	case DLL_THREAD_DETACH:
-	case DLL_PROCESS_DETACH:
 		break;
+	case DLL_PROCESS_DETACH:
+	{
+		if (lpReserved != nullptr) break; // do not cleanup if process is terminating.
+
+		// destroy the plugin window before unloading the DLL, to avoid crashes.
+		plugin_window.destroy();
+		break;
+	}
 	}
 	return TRUE;
 }
