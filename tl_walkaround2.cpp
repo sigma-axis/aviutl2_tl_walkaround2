@@ -44,8 +44,8 @@ namespace logging = AviUtl2::logging;
 #define PLUGIN_NAME		L"TLショトカ移動2"
 #define PLUGIN_VERSION	"v1.50 (for beta47)"
 #define PLUGIN_AUTHOR	L"σ軸"
-#define LEAST_AVIUTL2_VER_STR	"version 2.0beta47"
-constexpr uint32_t least_aviutl2_ver_num = 2004700;
+#define LEAST_AVIUTL2_VER_STR	"version 2.0beta45"
+constexpr uint32_t least_aviutl2_ver_num = 2004500;
 
 
 ////////////////////////////////
