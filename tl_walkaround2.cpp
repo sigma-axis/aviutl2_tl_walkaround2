@@ -42,10 +42,10 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.42 (for beta47)"
+#define PLUGIN_VERSION	"v1.50-beta1 (for beta47)"
 #define PLUGIN_AUTHOR	L"σ軸"
-#define LEAST_AVIUTL2_VER_STR	"version 2.0beta39"
-constexpr uint32_t least_aviutl2_ver_num = 2003900;
+#define LEAST_AVIUTL2_VER_STR	"version 2.0beta47"
+constexpr uint32_t least_aviutl2_ver_num = 2004700;
 
 
 ////////////////////////////////
@@ -63,9 +63,16 @@ constinit struct Settings {
 	decl_prop(type, name, def); \
 	constexpr static type name##_min = (min), name##_max = (max);
 
+	enum class ignore_layer : uint32_t {
+		none = 0,
+		hidden = 1,
+		locked = 2,
+		hidden_or_locked = 3,
+	};
 	struct {
 		decl_prop_minmax(double, page_rate, 0.25, 0.01, 1.0);
 		decl_prop_minmax(int, bpm_grid_div, 4, 1, 16);
+		decl_prop(ignore_layer, ignore_layers, ignore_layer::none);
 		decl_prop(bool, suppress_shift, false);
 		decl_prop(bool, focus_follows, false);
 
@@ -148,6 +155,12 @@ public:
 
 		read_double	(search, page_rate);
 		read_int	(search, bpm_grid_div);
+		read_type	(search, ignore_layers, ignore_layer);
+		switch (search.ignore_layers) {
+		case ignore_layer::none: case ignore_layer::hidden:
+		case ignore_layer::locked: case ignore_layer::hidden_or_locked: break;
+		default: search.ignore_layers = search.ignore_layers_def; break; // invalid value, revert to default.
+		}
 		read_bool	(search, suppress_shift);
 		read_bool	(search, focus_follows);
 
@@ -180,6 +193,7 @@ public:
 
 		write_val	(search, page_rate, , L"%.3f");
 		write_int	(search, bpm_grid_div);
+		write_val	(search, ignore_layers, std::to_underlying, L"%d");
 		write_bool	(search, suppress_shift);
 		write_bool	(search, focus_follows);
 
@@ -367,6 +381,8 @@ private:
 			bpm_div_edit,
 			bpm_div_spin,
 
+			ignore_layers_label,
+			ignore_layers_combo,
 			suppress_shift_check,
 			focus_follows_check,
 
@@ -396,6 +412,10 @@ private:
 			HWND spin = nullptr;
 		} bpm_div{};
 		struct {
+			HWND label = nullptr;
+			HWND combo = nullptr;
+		} ignore_layers{};
+		struct {
 			HWND check = nullptr;
 		} suppress_shift{};
 		struct {
@@ -418,7 +438,7 @@ private:
 				edit_width_0 = 56;
 
 			auto const dpi = ::GetDpiForWindow(root);
-			RECT client; ::GetWindowRect(root, &client);
+			RECT client; ::GetClientRect(root, &client);
 			int const pad_y = ::GetSystemMetricsForDpi(SM_CYBORDER, dpi) + 1;
 			int const edit_height = font_height(root) + 2 * pad_y;
 
@@ -451,6 +471,15 @@ private:
 			X += repos(bpm_div.edit, edit_width_1 - edit_height, edit_height, X, Y);
 			repos(bpm_div.spin, edit_height, edit_height, X, Y);
 
+			// ignore-layers controls.
+			X = margin_1; Y += unit_height_1;
+			X += repos(ignore_layers.label, label_width, edit_height - pad_y, X, Y + pad_y) + margin_1;
+			pos_layer_combo.left = X; pos_layer_combo.top = Y;
+			pos_layer_combo.right = pos_slider.right;
+			pos_layer_combo.bottom = pos_layer_combo.top + edit_height;
+			X += repos(ignore_layers.combo, pos_layer_combo.right - pos_layer_combo.left,
+				pos_layer_combo.bottom - pos_layer_combo.top, pos_layer_combo.left, pos_layer_combo.top);
+
 			// suppress-shift control.
 			X = margin_1; Y += unit_height_1;
 			X += repos(suppress_shift.check, client.right - 2 * margin_1, edit_height, X, Y);
@@ -468,10 +497,14 @@ private:
 		void size_changed(int width, int height)
 		{
 			// resize the slider w.r.t. the window size.
-			pos_slider.right = width - margin_1;
+			pos_slider.right = pos_layer_combo.right = width - margin_1;
 			::SetWindowPos(page_rate.slider, nullptr,
 				pos_slider.left, pos_slider.top,
 				pos_slider.right - pos_slider.left, pos_slider.bottom - pos_slider.top,
+				SWP_NOZORDER | SWP_NOACTIVATE);
+			::SetWindowPos(ignore_layers.combo, nullptr,
+				pos_layer_combo.left, pos_layer_combo.top,
+				pos_layer_combo.right - pos_layer_combo.left, pos_layer_combo.bottom - pos_layer_combo.top,
 				SWP_NOZORDER | SWP_NOACTIVATE);
 		}
 
@@ -488,6 +521,7 @@ private:
 
 		int margin_1 = {};
 		RECT pos_slider = {};
+		RECT pos_layer_combo = {};
 	} ctrl{};
 
 	void create_window_content()
@@ -565,6 +599,18 @@ private:
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::bpm_div_spin), hinst, nullptr);
 
+		// ignore-layers control.
+		ctrl.ignore_layers.label = ::CreateWindowExW(
+			0, WC_STATICW, tm(L"レイヤー無視:"),
+			WS_VISIBLE | WS_CHILD | SS_SIMPLE,
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			root, id(ctrl_ids::ignore_layers_label), hinst, nullptr);
+		ctrl.ignore_layers.combo = ::CreateWindowExW(
+			0, WC_COMBOBOXW, L"",
+			WS_VISIBLE | WS_CHILD | CBS_DROPDOWNLIST | CBS_HASSTRINGS,
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			root, id(ctrl_ids::ignore_layers_combo), hinst, nullptr);
+
 		// suppress-shift control.
 		ctrl.suppress_shift.check = ::CreateWindowExW(
 			0, WC_BUTTONW, translate(L"範囲選択を抑制"),
@@ -614,6 +660,12 @@ private:
 		::SendMessageW(ctrl.focus_follows.check, BM_SETCHECK, settings.search.focus_follows ? BST_CHECKED : BST_UNCHECKED, 0);
 
 		// set combo box items and selection.
+		::SendMessageW(ctrl.ignore_layers.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(translate(L"なし")));
+		::SendMessageW(ctrl.ignore_layers.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(translate(L"非表示")));
+		::SendMessageW(ctrl.ignore_layers.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(translate(L"ロック")));
+		::SendMessageW(ctrl.ignore_layers.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(translate(L"非表示とロック")));
+		::SendMessageW(ctrl.ignore_layers.combo, CB_SETCURSEL, static_cast<WPARAM>(settings.search.ignore_layers), 0);
+
 		::SendMessageW(ctrl.stretch.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(translate(L"秒")));
 		::SendMessageW(ctrl.stretch.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(translate(L"フレーム")));
 		::SendMessageW(ctrl.stretch.combo, CB_SETCURSEL, static_cast<WPARAM>(settings.stretch.unit), 0);
@@ -621,26 +673,28 @@ private:
 		// set fonts.
 		for (HWND control : {
 			ctrl.page_rate.label,
-				ctrl.page_rate.edit,
-				ctrl.bpm_div.label,
-				ctrl.bpm_div.edit,
-				ctrl.suppress_shift.check,
-				ctrl.focus_follows.check,
-				ctrl.stretch.label,
-				ctrl.stretch.combo,
-				ctrl.stretch.edit,
+			ctrl.page_rate.edit,
+			ctrl.bpm_div.label,
+			ctrl.bpm_div.edit,
+			ctrl.ignore_layers.label,
+			ctrl.ignore_layers.combo,
+			ctrl.suppress_shift.check,
+			ctrl.focus_follows.check,
+			ctrl.stretch.label,
+			ctrl.stretch.combo,
+			ctrl.stretch.edit,
 		}) ::SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(ctrl.gui_font), TRUE);
 
 		// set subclass procedures for tab-navigation.
 		for (HWND control : {
 			ctrl.page_rate.edit,
-				ctrl.page_rate.slider,
-				ctrl.bpm_div.edit,
-				ctrl.suppress_shift.check,
-				ctrl.focus_follows.check,
-				ctrl.stretch.label,
-				ctrl.stretch.edit,
-				ctrl.stretch.combo,
+			ctrl.page_rate.slider,
+			ctrl.bpm_div.edit,
+			ctrl.ignore_layers.combo,
+			ctrl.suppress_shift.check,
+			ctrl.focus_follows.check,
+			ctrl.stretch.edit,
+			ctrl.stretch.combo,
 		}) ::SetWindowSubclass(control, tab_navigation_proc, reinterpret_cast<UINT_PTR>(this), {});
 
 		// initialize the layout.
@@ -758,6 +812,21 @@ private:
 		return true;
 	}
 
+	void sync_ignore_layers() const
+	{
+		// ignore layers combo box changed.
+		auto sel = static_cast<Settings::ignore_layer>(::SendMessageW(ctrl.ignore_layers.combo, CB_GETCURSEL, 0, 0));
+		switch (sel) {
+		case Settings::ignore_layer::none: case Settings::ignore_layer::hidden:
+		case Settings::ignore_layer::locked: case Settings::ignore_layer::hidden_or_locked: break;
+		default: sel = settings.search.ignore_layers; break; // invalid selection, revert to previous.
+		}
+		settings.search.ignore_layers = sel;
+
+		// logging.
+		logging::verbose(L"Settings synchronized: settings.search.ignore_layers.");
+	}
+
 	void sync_suppress_shift() const
 	{
 		// suppress shift checkbox changed.
@@ -867,6 +936,7 @@ private:
 					that->ctrl.page_rate.edit,
 					that->ctrl.page_rate.slider,
 					that->ctrl.bpm_div.edit,
+					that->ctrl.ignore_layers.combo,
 					that->ctrl.suppress_shift.check,
 					that->ctrl.focus_follows.check,
 					that->ctrl.stretch.edit,
@@ -1017,6 +1087,17 @@ private:
 				{
 					if (sync_bpm_div()) return 0;
 					break;
+				}
+				}
+				break;
+			}
+			case ctrl_ids::ignore_layers_combo:
+			{
+				switch (HIWORD(wparam)) {
+				case CBN_SELCHANGE:
+				{
+					sync_ignore_layers();
+					return 0;
 				}
 				}
 				break;
@@ -1362,6 +1443,13 @@ static void move_scene_core(EDIT_SECTION* edit, bool forward, bool allow_midpt)
 	int const frame = edit->info->frame + (forward ? +1 : -1);
 	int next_frame = forward ? edit->info->frame_max : 0;
 	for (int layer = edit->info->layer_max; layer >= 0; layer--) {
+		if ((settings.search.ignore_layers == Settings::ignore_layer::hidden ||
+			settings.search.ignore_layers == Settings::ignore_layer::hidden_or_locked)
+			&& !edit->get_layer_enable(layer)) continue;
+		if ((settings.search.ignore_layers == Settings::ignore_layer::locked ||
+			settings.search.ignore_layers == Settings::ignore_layer::hidden_or_locked)
+			&& edit->get_layer_lock(layer)) continue;
+
 		auto f = find_boundary(edit, layer, frame, forward, allow_midpt);
 		next_frame = (next_frame > f) == forward ? f : next_frame;
 	}
