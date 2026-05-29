@@ -268,7 +268,7 @@ BPM グリッドの基準線を移動して，現在選択フレームに最も�
 
 メインメニューの「表示 :arrow_right: TLショトカ移動2」から表示されるウィンドウで，一部のコマンドの挙動を調整できます．
 
-<img width="458" height="212" alt="設定 GUI のウィンドウ" src="https://github.com/user-attachments/assets/cc137ecd-d267-4bd4-af6d-db838ed1f46d" />
+![設定 GUI のウィンドウ](https://github.com/user-attachments/assets/d6c4caf0-df32-4ad9-9af5-e6b701dd4dee)
 
 設定項目は `tl_walkaround2.ini` ファイルに記録されます．削除することで設定を初期化できます．
 - プラグインフォルダにこのファイルが配置されます．
