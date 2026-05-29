@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.42-beta2 (for beta47)"
+#define PLUGIN_VERSION	"v1.42-beta3 (for beta47)"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta39"
 constexpr uint32_t least_aviutl2_ver_num = 2003900;
@@ -1467,40 +1467,6 @@ static void scroll_vert_to_selected(EDIT_SECTION* edit)
 ////////////////////////////////
 // object focus functions.
 ////////////////////////////////
-static void focus_cursor_object_rev(EDIT_SECTION* edit)
-{
-	int const num_layers = edit->info->layer_max + 1, cursor_frame = edit->info->frame;
-	if (num_layers <= 0) return;
-
-	// see if the current focused object is on the cursor.
-	auto obj_curr = edit->get_focus_object();
-	int layer_end = 0;
-	if (obj_curr != nullptr) {
-		auto [layer, start, end] = edit->get_object_layer_frame(obj_curr);
-		if (start <= cursor_frame && cursor_frame <= end)
-			// if on the cursor, search starts from above this layer.
-			layer_end = layer;
-		else obj_curr = nullptr; // otherwise, search from the bottom.
-	}
-
-	// search for the object on the cursor, in backward order of layers.
-	int layer = obj_curr != nullptr ? layer_end : num_layers;
-	do {
-		layer = normal_modulo(layer - 1, num_layers);
-
-		// get the object on the layer from the cursor position.
-		auto obj = edit->find_object(layer, cursor_frame);
-		if (obj == nullptr) continue;
-
-		// see if it's on the cursor.
-		if (edit->get_object_layer_frame(obj).start <= cursor_frame) {
-			// then set focus.
-			if (obj != obj_curr) edit->set_focus_object(obj);
-			return;
-		}
-	} while (layer != layer_end);
-}
-
 static void focus_left_right_object(EDIT_SECTION* edit, bool right)
 {
 	OBJECT_HANDLE target_obj;
@@ -2146,7 +2112,6 @@ constexpr struct {
 	},
 	{ L"選択レイヤーへスクロール", &scroll_vert_to_selected },
 
-	{ L"現在フレームのオブジェクトを選択(逆順)", &focus_cursor_object_rev },
 	{ L"左のオブジェクトを選択", [](EDIT_SECTION* edit)
 	{
 		focus_left_right_object(edit, false);
