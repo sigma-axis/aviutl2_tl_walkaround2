@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.41 (for beta40a)"
+#define PLUGIN_VERSION	"v1.42-beta1 (for beta47)"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta39"
 constexpr uint32_t least_aviutl2_ver_num = 2003900;
@@ -1872,14 +1872,22 @@ static int calc_stretched_frame(int frame, double length, EDIT_INFO const* info)
 static void stretch_selected_objects(EDIT_SECTION* edit, bool forward)
 {
 	std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> targets{};
+	int focused_idx = -1; // bool was_selected = false;
 
 	// collect target objects.
 	if (int const n = edit->get_selected_object_num(); n > 0) {
-		for (int i = 0; i < n; i++)
-			targets.emplace_back(edit->get_selected_object(i), OBJECT_LAYER_FRAME{});
+		//was_selected = true;
+		auto const focused_obj = edit->get_focus_object();
+		for (int i = 0; i < n; i++) {
+			auto obj = edit->get_selected_object(i);
+			targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
+			if (focused_obj == obj) focused_idx = i;
 	}
-	else if (auto const obj = edit->get_focus_object(); obj != nullptr)
+	}
+	else if (auto const obj = edit->get_focus_object(); obj != nullptr) {
 		targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
+		focused_idx = 0;
+	}
 	if (targets.empty()) return; // no operation.
 
 	// get their positions.
@@ -1888,7 +1896,7 @@ static void stretch_selected_objects(EDIT_SECTION* edit, bool forward)
 
 	// then move the starting and ending positions.
 	uint32_t stretched_count = 0;
-	for (auto const& [obj, pos] : targets) {
+	for (auto& [obj, pos] : targets) {
 		int new_start = pos.start, new_end = pos.end + 1;
 
 		// stretch the edge.
@@ -1913,10 +1921,14 @@ static void stretch_selected_objects(EDIT_SECTION* edit, bool forward)
 
 		// then replace the object with the new alias.
 		edit->delete_object(obj);
-		edit->create_object_from_alias(alias.c_str(), pos.layer, new_start, new_end - 1 - new_start);
+		obj = edit->create_object_from_alias(alias.c_str(), pos.layer, new_start, new_end - 1 - new_start);
 
 		stretched_count++;
 	}
+
+	// restore the focus.
+	if (focused_idx >= 0) edit->set_focus_object(targets[focused_idx].first);
+	// if (was_selected) { /* no means to restore the selection so far (beta47). */ }
 
 	// output an information message.
 	if (stretched_count > 0) {

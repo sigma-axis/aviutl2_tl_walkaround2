@@ -23,7 +23,7 @@
 
   http://spring-fragrance.mints.ne.jp/aviutl
 
-  - `beta40a` で動作確認済み．
+  - `beta47` で動作確認済み．
 - Visual C++ 再頒布可能パッケージ (v14 の x64 版が必要)
 
   https://learn.microsoft.com/ja-jp/cpp/windows/latest-supported-vc-redist
@@ -353,6 +353,13 @@ queue_size=256
 
 1.  動画オブジェクトやシーンオブジェクトなどに[「選択オブジェクトの始点を伸ばす」](#選択オブジェクトの始点終点を伸ばす)のコマンドを使用した場合，動画やシーンの開始時刻は連動して変化しません．
 
+##  次の改版予定
+
+- **v1.42 (for beta43a)** (2026-??-??)
+
+  - コマンド「選択オブジェクトの始点を伸ばす」「選択オブジェクトの終点を伸ばす」で，オブジェクトの選択 (オブジェクト設定に表示中の対象) が解除されてしまうのを修正．
+  - `beta47` での動作確認．
+
 ##  改版履歴
 
 - **v1.41 (for beta40a)** (2026-04-07)
@@ -421,7 +428,7 @@ queue_size=256
 
 The MIT License (MIT)
 
-Copyright (C) 2025 sigma-axis
+Copyright (C) 2025-2026 sigma-axis
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
