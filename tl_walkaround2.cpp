@@ -42,10 +42,10 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.50 (for beta47)"
+#define PLUGIN_VERSION	"v1.60-r1 (for beta50)"
 #define PLUGIN_AUTHOR	L"σ軸"
-#define LEAST_AVIUTL2_VER_STR	"version 2.0beta45"
-constexpr uint32_t least_aviutl2_ver_num = 2004500;
+#define LEAST_AVIUTL2_VER_STR	"version 2.0beta50"
+constexpr uint32_t least_aviutl2_ver_num = 2005000;
 
 
 ////////////////////////////////
@@ -92,7 +92,7 @@ constinit struct Settings {
 
 	struct {
 		decl_prop_minmax(int, queue_size, 1 << 8, 1 << 4, 1 << 14);
-		decl_prop_minmax(double, polling_period, 2.0, 0.5, 60.0);
+		decl_prop_minmax(double, polling_cooltime, 0.5, 0.0, 10.0);
 
 		constexpr static std::wstring_view section = L"cursor_undo";
 	} cursor_undo;
@@ -172,7 +172,7 @@ public:
 		read_double	(stretch, length);
 
 		read_int	(cursor_undo, queue_size);
-		read_double	(cursor_undo, polling_period);
+		read_double	(cursor_undo, polling_cooltime);
 
 	#undef read_type
 	#undef read_bool
@@ -203,7 +203,7 @@ public:
 		// even though cursor_undo can't change during runtime, save it
 		// so missing .ini file will be fully generated.
 		write_int	(cursor_undo, queue_size);
-		write_val	(cursor_undo, polling_period, , L"%.3f");
+		write_val	(cursor_undo, polling_cooltime, , L"%.3f");
 
 	#undef write_bool
 	#undef write_int
@@ -276,6 +276,8 @@ private:
 	std::map<KeyT, undo_history<ValT>> queues{};
 	undo_history<ValT>* curr = nullptr;
 
+	uint64_t last_poll_time = 0;
+
 public:
 	void set_key(KeyT const& key, ValT const& init)
 	{
@@ -290,6 +292,33 @@ public:
 	}
 	undo_history<ValT>* current() const { return curr; }
 	undo_bundle(size_t max_len) : max_len{ max_len }, queues{} {}
+
+	bool is_cooltime(uint64_t curr_time) const
+	{
+		if (last_poll_time > 0 && (curr_time - last_poll_time) * 0.001 < settings.cursor_undo.polling_cooltime)
+			return true;
+		return false;
+	}
+	void set_cooltime(uint64_t curr_time)
+	{
+		last_poll_time = curr_time;
+	}
+	static uint64_t get_curr_polltime()
+	{
+		return ::GetTickCount64();
+	}
+
+	bool check_cooltime()
+	{
+		if (auto const t = get_curr_polltime();
+			is_cooltime(t)) return true;
+		else set_cooltime(t);
+		return false;
+	}
+	void reset_cooltime()
+	{
+		set_cooltime(0);
+	}
 };
 
 undo_bundle<int, int> cursor_undo_queues{ 0 };
@@ -389,8 +418,6 @@ private:
 			stretch_label,
 			stretch_length_edit,
 			stretch_unit_combo,
-
-			timer_cursor_poll,
 		};
 	};
 	struct prv_mes {
@@ -1002,10 +1029,6 @@ private:
 		case WM_CREATE:
 		{
 			root = hwnd;
-
-			// setup polling timer.
-			::SetTimer(root, ctrl_ids::timer_cursor_poll,
-				static_cast<uint32_t>(std::lround(1000 * settings.cursor_undo.polling_period)), nullptr);
 			return 0;
 		}
 		case WM_NCDESTROY:
@@ -1015,9 +1038,6 @@ private:
 				::DeleteObject(ctrl.gui_font);
 				ctrl.gui_font = nullptr;
 			}
-
-			// turn the timer off.
-			::KillTimer(root, ctrl_ids::timer_cursor_poll);
 
 			// save the setting on terminating.
 			settings.save();
@@ -1145,19 +1165,6 @@ private:
 				}
 				}
 				break;
-			}
-			}
-			break;
-		}
-		case WM_TIMER:
-		{
-			switch (static_cast<uint32_t>(wparam)) {
-			case ctrl_ids::timer_cursor_poll:
-			{
-				// periodically record the current frame.
-				if (auto* queue = cursor_undo_queues.current(); queue != nullptr)
-					queue->check_forward(get_edit_info().frame);
-				return 0;
 			}
 			}
 			break;
@@ -2007,11 +2014,22 @@ static void stretch_selected_objects(EDIT_SECTION* edit, bool forward)
 ////////////////////////////////
 // cursor undo operations.
 ////////////////////////////////
+static void on_frame_changed(void* param)
+{
+	// suppress polling for a certain amount of time.
+	if (cursor_undo_queues.check_cooltime()) return;
+
+	// update the history.
+	if (auto* queue = cursor_undo_queues.current(); queue != nullptr)
+		queue->check_forward(get_edit_info().frame);
+}
 static void cursor_undo(EDIT_SECTION* edit)
 {
 	if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
 		if (queue->size() <= 1) return;
+		queue->check_forward(get_edit_info().frame); // push the current as a redo target.
 		move_frame_wrap(edit, edit->info->layer, queue->backward());
+		cursor_undo_queues.reset_cooltime();
 	}
 }
 
@@ -2019,8 +2037,10 @@ static void cursor_redo(EDIT_SECTION* edit)
 {
 	if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
 		queue->check_forward(edit->info->frame);
-		if (int next_frame; queue->repush(next_frame))
+		if (int next_frame; queue->repush(next_frame)) {
 			move_frame_wrap(edit, edit->info->layer, next_frame);
+			cursor_undo_queues.reset_cooltime();
+		}
 	}
 }
 
@@ -2039,6 +2059,7 @@ static void on_scene_changed(EDIT_SECTION* edit)
 {
 	// prepare the undo history for this scene, if not created yet.
 	cursor_undo_queues.set_key(edit->info->scene_id, edit->info->frame);
+	cursor_undo_queues.reset_cooltime();
 	logging::verbose(L"on_scene_changed().");
 }
 
@@ -2448,4 +2469,5 @@ extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 	// register event callbacks.
 	host->register_project_load_handler(&on_load_project);
 	host->register_change_scene_handler(&on_scene_changed);
+	host->register_event_listener(EVENT_TYPE::CHANGE_EDIT_FRAME, nullptr, &on_frame_changed);
 }
