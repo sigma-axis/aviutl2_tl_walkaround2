@@ -894,7 +894,7 @@ private:
 					settings.stretch.length = std::round(settings.stretch.length * info.rate / info.scale);
 				}
 				}
-				
+
 				// update the controls.
 				sync_stretch_time(false, true);
 
@@ -1902,7 +1902,7 @@ std::string time_changed_object(std::string_view const& alias, int pos_start, in
 
 	std::string ret{};
 	ret.reserve(alias.size() + 32); // up to two integers may change. 32 (>= 11 x 2) is enough.
-	
+
 	// copy the part before the frame data.
 	ret.append(alias.data(), data_start);
 
