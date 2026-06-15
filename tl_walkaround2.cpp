@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.60-r1 (for beta50)"
+#define PLUGIN_VERSION	"v1.60-r2 (for beta50)"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta50"
 constexpr uint32_t least_aviutl2_ver_num = 2005000;
@@ -1199,33 +1199,17 @@ private:
 ////////////////////////////////
 // timeline searching functions.
 ////////////////////////////////
-static std::vector<int> find_midpoints(std::string_view const& alias, size_t* data_start = nullptr, size_t* data_end = nullptr)
+static std::vector<int> find_midpoints(EDIT_SECTION* edit, OBJECT_HANDLE obj)
 {
-	constexpr std::string_view token1 = "\nframe=", token2 = "\n";
-	if (auto pos = alias.find(token1, 0);
-		pos != alias.npos) {
-		auto l = alias.substr(pos + token1.size());
-		l = l.substr(0, l.find(token2, 0));
-		if (data_start != nullptr) *data_start = pos + token1.size();
-		if (data_end != nullptr) *data_end = pos + token1.size() + l.size();
+	auto const layer_frame = edit->get_object_layer_frame(obj);
+	int const sz = std::max(edit->get_object_section_num(obj), 1);
+	std::vector<int> ret{}; ret.reserve(static_cast<size_t>(sz + 1));
 
-		auto const* p = &*l.begin();
-		auto const* const p_end = p + l.size();
-		std::vector<int> ret{};
-		while (p < p_end) {
-			char* next;
-			int f = std::strtol(p, &next, 10);
-			if (p == next || f == LONG_MAX) return {};
-			ret.push_back(f);
-			p = next + 1;
-		}
-		if (ret.size() >= 2) {
-			ret.back()++;
-			return ret;
-		}
-	}
-	logging::error(L"midpoints could not be identified!");
-	return {};
+	ret.push_back(layer_frame.start);
+	for (int i = 1; i < sz; i++)
+		ret.push_back(edit->get_object_section_frame(obj, i));
+	ret.push_back(layer_frame.end + 1);
+	return ret;
 }
 
 static std::tuple<OBJECT_HANDLE, int, int> find_next_obj(EDIT_SECTION* edit, int layer, int frame)
@@ -1315,8 +1299,8 @@ static int find_boundary(EDIT_SECTION* edit, int layer, int frame, bool forward,
 		if (obj == nullptr) return edit->info->frame_max; // no more object
 		else if (allow_midpt && frame > obj_start) {
 			// see if there is a midpoint on the found object.
-			auto const alias = edit->get_object_alias(obj);
-			auto const midpoints = find_midpoints(alias);
+			auto const midpoints = find_midpoints(edit, obj);
+			[[assume(midpoints.size() >= 2)]];
 			if (midpoints.size() > 2) {
 				auto const idx = find_next_midpoint(midpoints, frame);
 				return midpoints[idx];
@@ -1330,8 +1314,8 @@ static int find_boundary(EDIT_SECTION* edit, int layer, int frame, bool forward,
 		if (obj == nullptr) return 0; // no more object
 		else if (allow_midpt && obj_end > frame) {
 			// see if there is a midpoint on the found object.
-			auto const alias = edit->get_object_alias(obj);
-			auto const midpoints = find_midpoints(alias);
+			auto const midpoints = find_midpoints(edit, obj);
+			[[assume(midpoints.size() >= 2)]];
 			if (midpoints.size() > 2) {
 				auto const idx = find_prev_midpoint(midpoints, frame);
 				return midpoints[idx];
@@ -1892,12 +1876,10 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 ////////////////////////////////
 // time stretching operations.
 ////////////////////////////////
-std::string time_changed_object(std::string_view const& alias, int pos_start, int pos_end)
+static std::string time_changed_object(EDIT_SECTION* edit, OBJECT_HANDLE obj, int pos_start, int pos_end)
 {
-	size_t data_start, data_end;
-	auto midpoints = find_midpoints(alias, &data_start, &data_end);
-	if (midpoints.size() < 2) return "";
-
+	auto midpoints = find_midpoints(edit, obj);
+	[[assume(midpoints.size() >= 2)]];
 	if (int const adj_pos_start = std::min(std::max(pos_start, 0), midpoints[1] - 1),
 		adj_pos_end = std::max(pos_end - 1,
 			midpoints[midpoints.size() - 2] + (midpoints.size() == 2 ? 0 : 1));
@@ -1905,6 +1887,15 @@ std::string time_changed_object(std::string_view const& alias, int pos_start, in
 	else {
 		midpoints.front() = adj_pos_start;
 		midpoints.back() = adj_pos_end;
+	}
+
+	size_t data_start, data_end;
+	std::string_view const& alias = edit->get_object_alias(obj);
+	constexpr std::string_view token1 = "\nframe=", token2 = "\n";
+	if (auto const pos = alias.find(token1, 0); pos == alias.npos) return "";
+	else {
+		data_start = pos + token1.size();
+		data_end = std::min(alias.find(token2, data_start), alias.size());
 	}
 
 	std::string ret{};
@@ -1984,7 +1975,7 @@ static void stretch_selected_objects(EDIT_SECTION* edit, bool forward)
 		}
 
 		// try constructing a new alias.
-		auto const alias = time_changed_object(edit->get_object_alias(obj), new_start, new_end);
+		auto const alias = time_changed_object(edit, obj, new_start, new_end);
 		if (alias.empty()) continue; // cannot stretch.
 
 		// then replace the object with the new alias.
@@ -2014,6 +2005,14 @@ static void stretch_selected_objects(EDIT_SECTION* edit, bool forward)
 ////////////////////////////////
 // cursor undo operations.
 ////////////////////////////////
+static void on_scene_changed(void* param)
+{
+	// prepare the undo history for this scene, if not created yet.
+	auto const info = get_edit_info();
+	cursor_undo_queues.set_key(info.scene_id, info.frame);
+	cursor_undo_queues.reset_cooltime();
+}
+
 static void on_frame_changed(void* param)
 {
 	// suppress polling for a certain amount of time.
@@ -2023,6 +2022,7 @@ static void on_frame_changed(void* param)
 	if (auto* queue = cursor_undo_queues.current(); queue != nullptr)
 		queue->check_forward(get_edit_info().frame);
 }
+
 static void cursor_undo(EDIT_SECTION* edit)
 {
 	if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
@@ -2053,14 +2053,6 @@ static void on_load_project(PROJECT_FILE* project)
 	// clear the queue.
 	cursor_undo_queues.clear();
 	logging::verbose(L"Cursor undo buffer cleared.");
-}
-
-static void on_scene_changed(EDIT_SECTION* edit)
-{
-	// prepare the undo history for this scene, if not created yet.
-	cursor_undo_queues.set_key(edit->info->scene_id, edit->info->frame);
-	cursor_undo_queues.reset_cooltime();
-	logging::verbose(L"on_scene_changed().");
 }
 
 
@@ -2468,6 +2460,6 @@ extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 
 	// register event callbacks.
 	host->register_project_load_handler(&on_load_project);
-	host->register_change_scene_handler(&on_scene_changed);
+	host->register_event_listener(EVENT_TYPE::CHANGE_EDIT_SCENE, nullptr, &on_scene_changed);
 	host->register_event_listener(EVENT_TYPE::CHANGE_EDIT_FRAME, nullptr, &on_frame_changed);
 }
