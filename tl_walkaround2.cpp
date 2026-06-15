@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.60-r3 (for beta50)"
+#define PLUGIN_VERSION	"v1.60 (for beta50)"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta50"
 constexpr uint32_t least_aviutl2_ver_num = 2005000;
@@ -276,8 +276,6 @@ private:
 	std::map<KeyT, undo_history<ValT>> queues{};
 	undo_history<ValT>* curr = nullptr;
 
-	uint64_t last_poll_time = 0;
-
 public:
 	void set_key(KeyT const& key, ValT const& init)
 	{
@@ -292,7 +290,14 @@ public:
 	}
 	undo_history<ValT>* current() const { return curr; }
 	undo_bundle(size_t max_len) : max_len{ max_len }, queues{} {}
+};
 
+template<class KeyT, class ValT>
+struct cooltime_undo_bundle : undo_bundle<KeyT, ValT> {
+private:
+	uint64_t last_poll_time = 0;
+
+public:
 	bool is_cooltime(uint64_t curr_time) const
 	{
 		if (last_poll_time > 0 && (curr_time - last_poll_time) * 0.001 < settings.cursor_undo.polling_cooltime)
@@ -319,9 +324,11 @@ public:
 	{
 		set_cooltime(0);
 	}
+
+	cooltime_undo_bundle(size_t max_len) : undo_bundle<KeyT, ValT>{ max_len } {};
 };
 
-undo_bundle<int, int> cursor_undo_queues{ 0 };
+cooltime_undo_bundle<int, int> cursor_undo_queues{ 0 };
 
 template<class CharT>
 struct string_pool {
