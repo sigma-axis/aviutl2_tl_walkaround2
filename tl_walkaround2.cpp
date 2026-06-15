@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.60-r2 (for beta50)"
+#define PLUGIN_VERSION	"v1.60-r3 (for beta50)"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta50"
 constexpr uint32_t least_aviutl2_ver_num = 2005000;
@@ -2023,6 +2023,14 @@ static void on_frame_changed(void* param)
 		queue->check_forward(get_edit_info().frame);
 }
 
+static void on_update_object(void* param)
+{
+	if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
+		queue->check_forward(get_edit_info().frame);
+		cursor_undo_queues.reset_cooltime();
+	}
+}
+
 static void cursor_undo(EDIT_SECTION* edit)
 {
 	if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
@@ -2462,4 +2470,5 @@ extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 	host->register_project_load_handler(&on_load_project);
 	host->register_event_listener(EVENT_TYPE::CHANGE_EDIT_SCENE, nullptr, &on_scene_changed);
 	host->register_event_listener(EVENT_TYPE::CHANGE_EDIT_FRAME, nullptr, &on_frame_changed);
+	host->register_event_listener(EVENT_TYPE::UPDATE_OBJECT, nullptr, &on_update_object);
 }
