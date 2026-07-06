@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.61-wip (for beta53a)"
+#define PLUGIN_VERSION	"v1.70-wip (for beta53a)"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta53a"
 constexpr uint32_t least_aviutl2_ver_num = 2005301;
@@ -1992,7 +1992,7 @@ static int calc_stretched_frame(int frame, double length, EDIT_INFO const* info)
 	}
 }
 
-static void stretch_selected_objects(EDIT_SECTION* edit, bool forward)
+static void stretch_selected_objects(EDIT_SECTION* edit, bool forward, int absolute_frame = -1)
 {
 	std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> targets{};
 	int focused_idx = -1; // bool was_selected = false;
@@ -2024,14 +2024,20 @@ static void stretch_selected_objects(EDIT_SECTION* edit, bool forward)
 
 		// stretch the edge.
 		if (forward) {
-			new_end = std::max(calc_stretched_frame(new_end, settings.stretch.length, edit->info), new_start + 1);
+			new_end = std::max(
+				absolute_frame >= 0 ? absolute_frame :
+				calc_stretched_frame(new_end, settings.stretch.length, edit->info),
+				new_start + 1);
 
 			// hit-test with other objects.
 			auto const [o, s, e] = find_next_obj(edit, pos.layer, pos.end + 2);
 			if (o != nullptr && s < new_end) new_end = s;
 		}
 		else {
-			new_start = std::min(calc_stretched_frame(new_start, -settings.stretch.length, edit->info), new_end - 1);
+			new_start = std::min(
+				absolute_frame >= 0 ? absolute_frame :
+				calc_stretched_frame(new_start, -settings.stretch.length, edit->info),
+				new_end - 1);
 
 			// hit-test with other objects.
 			auto const [o, s, e] = find_prev_obj(edit, pos.layer, pos.start - 1);
@@ -2407,6 +2413,16 @@ constexpr struct {
 		stretch_selected_objects(edit, true);
 	}
 	},
+	{ L"選択オブジェクトの始点を現在フレームに伸ばす", [](EDIT_SECTION* edit)
+	{
+		stretch_selected_objects(edit, false, edit->info->frame);
+	}
+	},
+	{ L"選択オブジェクトの終点を現在フレームに伸ばす", [](EDIT_SECTION* edit)
+	{
+		stretch_selected_objects(edit, true, edit->info->frame);
+	}
+	},
 
 	// cursor undo menu items.
 	{ L"カーソル位置を元に戻す", &cursor_undo },
@@ -2434,6 +2450,16 @@ obj_menu_items[] = {
 	{ L"選択オブジェクトの終点を伸ばす", [](EDIT_SECTION* edit)
 	{
 		stretch_selected_objects(edit, true);
+	}
+	},
+	{ L"選択オブジェクトの始点を現在フレームに伸ばす", [](EDIT_SECTION* edit)
+	{
+		stretch_selected_objects(edit, false, edit->info->frame);
+	}
+	},
+	{ L"選択オブジェクトの終点を現在フレームに伸ばす", [](EDIT_SECTION* edit)
+	{
+		stretch_selected_objects(edit, true, edit->info->frame);
 	}
 	},
 };
