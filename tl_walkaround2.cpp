@@ -42,10 +42,10 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.60 (for beta50)"
+#define PLUGIN_VERSION	"v1.61-wip (for beta53a)"
 #define PLUGIN_AUTHOR	L"σ軸"
-#define LEAST_AVIUTL2_VER_STR	"version 2.0beta50"
-constexpr uint32_t least_aviutl2_ver_num = 2005000;
+#define LEAST_AVIUTL2_VER_STR	"version 2.0beta53a"
+constexpr uint32_t least_aviutl2_ver_num = 2005301;
 
 
 ////////////////////////////////
@@ -389,6 +389,20 @@ static EDIT_INFO get_edit_info()
 	edit_handle->get_edit_info(&info, sizeof(info));
 	return info;
 };
+
+static std::vector<BPM_INFO> get_bpm_info(EDIT_SECTION* edit)
+{
+	std::vector<BPM_INFO> ret{};
+	ret.resize(edit->get_grid_bpm_list(nullptr, 0, sizeof(BPM_INFO)));
+	edit->get_grid_bpm_list(ret.data(), static_cast<int>(ret.size()), sizeof(BPM_INFO));
+	return ret;
+}
+static constexpr auto find_bpm_grid_at(std::vector<BPM_INFO>& bpm_list, int frame, int rate, int scale)
+{
+	double const t = static_cast<double>(frame + 1) * scale / rate, dt = static_cast<double>(scale) / rate;
+	return std::partition_point(bpm_list.begin() + 1, bpm_list.end(),
+		[T = std::max(bpm_list.front().start + dt, t)](BPM_INFO const& info) { return info.start < T; }) - 1;
+}
 
 static wchar_t const* translate(wchar_t const* text, wchar_t const* section = nullptr)
 {
@@ -1349,14 +1363,16 @@ struct Timeline_calc {
 	}
 };
 struct BPM_grid_calc : Timeline_calc {
-	float tempo; float offset;
-	constexpr BPM_grid_calc(float t, float o, int r, int s)
+	double tempo; double offset;
+	constexpr BPM_grid_calc(float t, double o, int r, int s)
 		: Timeline_calc{ r, s }
 		, tempo(t), offset(o) {}
 
 	constexpr double beat_to_frame(double beat_num) const
 	{
-		return second_to_frame(beat_to_second(beat_num));
+		//return second_to_frame(beat_to_second(beat_num));
+		//return 60 * rate * beat_num / (tempo * scale) + rate * offset / scale;
+		return (60 * beat_num + tempo * offset) * rate / (tempo * scale);
 	}
 	int beat_to_frame_int(double beat_num) const
 	{
@@ -1365,7 +1381,9 @@ struct BPM_grid_calc : Timeline_calc {
 	}
 	constexpr double frame_to_beat(double frame_num) const
 	{
-		return second_to_beat(frame_to_second(frame_num));
+		//return second_to_beat(frame_to_second(frame_num));
+		//return (frame_num * scale / rate - offset) * tempo / 60.0;
+		return (tempo * scale * frame_num - tempo * rate * offset) / (60.0 * rate);
 	}
 
 	constexpr double beat_to_second(double beat_num) const
@@ -1374,7 +1392,7 @@ struct BPM_grid_calc : Timeline_calc {
 	}
 	constexpr double second_to_beat(double second_num) const
 	{
-		return (second_num - offset) * tempo / 60.0f;
+		return (second_num - offset) * tempo / 60.0;
 	}
 };
 
@@ -1604,49 +1622,88 @@ static void focus_above_below_layer_object(EDIT_SECTION* edit, bool below)
 ////////////////////////////////
 // BPM grid operations.
 ////////////////////////////////
-static void move_to_bpm_grid(EDIT_SECTION* edit, int tempo_factor_num, int tempo_factor_den, bool forward)
+static void move_to_bpm_grid(EDIT_SECTION* edit, int tempo_factor_num, int tempo_factor_den, bool by_measure, bool forward)
 {
-	// move to the nearest BPM grid point.
-	BPM_grid_calc const bpm_calc{
-		edit->info->grid_bpm_tempo * tempo_factor_num / tempo_factor_den,
-		edit->info->grid_bpm_offset,
+	Timeline_calc const tl_calc{
 		edit->info->rate,
 		edit->info->scale
 	};
-	double target_beat;
-	if (forward) // calculate from the next frame.
-		target_beat = std::floor(bpm_calc.frame_to_beat(edit->info->frame)) + 1;
-	else // calculate from the previous frame.
-		target_beat = std::floor(bpm_calc.frame_to_beat(edit->info->frame - 1));
+
+	int const curr_frame = edit->info->frame;
+	double const curr_time = tl_calc.frame_to_second(curr_frame);
+	auto bpm_list = get_bpm_info(edit);
+	auto it_bpm = find_bpm_grid_at(bpm_list, curr_frame, tl_calc.rate, tl_calc.scale);
+	if (!forward &&
+		static_cast<int>(std::floor(tl_calc.second_to_frame(it_bpm->start))) >= curr_frame &&
+		it_bpm != bpm_list.begin()) it_bpm--;
+
+	// find the nearest BPM grid point.
+	BPM_grid_calc const bpm_calc{
+		it_bpm->tempo * tempo_factor_num / (tempo_factor_den * (by_measure ? it_bpm->beat : 1)),
+		it_bpm->start + it_bpm->offset,
+		tl_calc.rate, tl_calc.scale
+	};
+
+	int next_frame;
+	if (forward) {
+		// calculate from the next frame.
+		double const target_beat = std::max(
+			std::floor(bpm_calc.frame_to_beat(curr_frame)) + 1,
+			std::floor(bpm_calc.frame_to_beat(curr_frame + 1)));
+		next_frame = bpm_calc.beat_to_frame_int(target_beat);
+
+		// stop at the boundary of BPM grid settings.
+		if (it_bpm != bpm_list.end() - 1) {
+			auto const it_next = it_bpm + 1;
+			int const cand = static_cast<int>(std::floor(
+				it_next->start * edit->info->rate / edit->info->scale));
+			if (cand > curr_frame) next_frame = std::min(next_frame, cand);
+		}
+	}
+	else {
+		// calculate from the previous frame.
+		double const target_beat =
+			std::floor(bpm_calc.frame_to_beat(curr_frame - 1));
+		next_frame = bpm_calc.beat_to_frame_int(target_beat);
+
+		// stop at the boundary of BPM grid settings.
+		int const cand = static_cast<int>(std::floor(
+			it_bpm->start * edit->info->rate / edit->info->scale));
+		if (cand < curr_frame) next_frame = std::max(next_frame, cand);
+	}
 
 	// then move to the BPM grid.
-	int const next_frame = bpm_calc.beat_to_frame_int(target_beat);
 	move_frame_wrap(edit, edit->info->layer, next_frame);
 }
 
 static void shift_bpm_grid_nearest_measure_to_cursor(EDIT_SECTION* edit)
 {
-	// shift the BPM grid offset so that the nearest measure line is on the cursor.
-	BPM_grid_calc const bpm_calc{
-		edit->info->grid_bpm_tempo / edit->info->grid_bpm_beat,
-		edit->info->grid_bpm_offset,
+	Timeline_calc const tl_calc{
 		edit->info->rate,
 		edit->info->scale
 	};
 
+	int const curr_frame = edit->info->frame;
+	double const curr_time = tl_calc.frame_to_second(curr_frame);
+	auto bpm_list = get_bpm_info(edit);
+	auto const it_bpm = find_bpm_grid_at(bpm_list, curr_frame, tl_calc.rate, tl_calc.scale);
+
+	// shift the BPM grid offset so that the nearest measure line is on the cursor.
+	BPM_grid_calc const bpm_calc{
+		it_bpm->tempo / it_bpm->beat,
+		it_bpm->start + it_bpm->offset,
+		tl_calc.rate, tl_calc.scale
+	};
+
 	// find the nearest measure.
-	double const measure = std::round(bpm_calc.frame_to_beat(edit->info->frame));
+	double const measure = std::round(bpm_calc.frame_to_beat(curr_frame));
 
 	// calculate the frame at that measure.
 	int const measure_frame = bpm_calc.beat_to_frame_int(measure);
 
 	// then move the BPM grid.
-	edit->set_grid_bpm(
-		edit->info->grid_bpm_tempo,
-		edit->info->grid_bpm_beat,
-		static_cast<float>(edit->info->grid_bpm_offset
-		+ bpm_calc.frame_to_second(edit->info->frame - measure_frame))
-	);
+	it_bpm->offset = static_cast<float>(it_bpm->offset + curr_time - bpm_calc.frame_to_second(measure_frame));
+	edit->set_grid_bpm_list(bpm_list.data(), static_cast<int>(bpm_list.size()), sizeof(BPM_INFO));
 }
 
 static void shift_bpm_grid_offset(EDIT_SECTION* edit, int frames)
@@ -1656,13 +1713,13 @@ static void shift_bpm_grid_offset(EDIT_SECTION* edit, int frames)
 		edit->info->scale
 	};
 
+	int const curr_frame = edit->info->frame;
+	auto bpm_list = get_bpm_info(edit);
+	auto const it_bpm = find_bpm_grid_at(bpm_list, curr_frame, tl_calc.rate, tl_calc.scale);
+
 	// move the BPM grid.
-	edit->set_grid_bpm(
-		edit->info->grid_bpm_tempo,
-		edit->info->grid_bpm_beat,
-		static_cast<float>(edit->info->grid_bpm_offset
-		+ tl_calc.frame_to_second(frames))
-	);
+	it_bpm->offset = static_cast<float>(it_bpm->offset + tl_calc.frame_to_second(frames));
+	edit->set_grid_bpm_list(bpm_list.data(), static_cast<int>(bpm_list.size()), sizeof(BPM_INFO));
 }
 
 
@@ -2261,32 +2318,32 @@ constexpr struct {
 
 	{ L"左の小節線へ移動(BPM)", [](EDIT_SECTION* edit)
 	{
-		move_to_bpm_grid(edit, 1, edit->info->grid_bpm_beat, false);
+		move_to_bpm_grid(edit, 1, 1, true, false);
 	}
 	},
 	{ L"右の小節線へ移動(BPM)", [](EDIT_SECTION* edit)
 	{
-		move_to_bpm_grid(edit, 1, edit->info->grid_bpm_beat, true);
+		move_to_bpm_grid(edit, 1, 1, true, true);
 	}
 	},
 	{ L"左の拍数線へ移動(BPM)", [](EDIT_SECTION* edit)
 	{
-		move_to_bpm_grid(edit, 1, 1, false);
+		move_to_bpm_grid(edit, 1, 1, false, false);
 	}
 	},
 	{ L"右の拍数線へ移動(BPM)", [](EDIT_SECTION* edit)
 	{
-		move_to_bpm_grid(edit, 1, 1, true);
+		move_to_bpm_grid(edit, 1, 1, false, true);
 	}
 	},
 	{ L"左に1/N拍移動(BPM)", [](EDIT_SECTION* edit)
 	{
-		move_to_bpm_grid(edit, settings.search.bpm_grid_div, 1, false);
+		move_to_bpm_grid(edit, settings.search.bpm_grid_div, 1, false, false);
 	}
 	},
 	{ L"右に1/N拍移動(BPM)", [](EDIT_SECTION* edit)
 	{
-		move_to_bpm_grid(edit, settings.search.bpm_grid_div, 1, true);
+		move_to_bpm_grid(edit, settings.search.bpm_grid_div, 1, false, true);
 	}
 	},
 	{ L"左にグリッド基準線を移動(BPM)", [](EDIT_SECTION* edit)
@@ -2305,11 +2362,14 @@ constexpr struct {
 			edit->info->rate,
 			edit->info->scale
 		};
-		edit->set_grid_bpm(
-			edit->info->grid_bpm_tempo,
-			edit->info->grid_bpm_beat,
-			static_cast<float>(tl_calc.frame_to_second(edit->info->frame))
-		);
+
+		int const curr_frame = edit->info->frame;
+		double const curr_time = tl_calc.frame_to_second(curr_frame);
+		auto bpm_list = get_bpm_info(edit);
+		auto const it_bpm = find_bpm_grid_at(bpm_list, curr_frame, tl_calc.rate, tl_calc.scale);
+
+		it_bpm->offset = static_cast<float>(curr_time - it_bpm->start);
+		edit->set_grid_bpm_list(bpm_list.data(), static_cast<int>(bpm_list.size()), sizeof(BPM_INFO));
 	}
 	},
 	{ L"最寄りの小節線を現在フレームに(BPM)", &shift_bpm_grid_nearest_measure_to_cursor },

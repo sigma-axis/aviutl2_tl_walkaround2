@@ -23,7 +23,8 @@
 
   http://spring-fragrance.mints.ne.jp/aviutl
 
-  - `beta50` で動作確認済み．
+  - `beta53a` で動作確認済み．
+
 - Visual C++ 再頒布可能パッケージ (v14 の x64 版が必要)
 
   https://learn.microsoft.com/ja-jp/cpp/windows/latest-supported-vc-redist
@@ -365,6 +366,14 @@ queue_size=256
 1.  [BPMグリッド倍化プラグイン](https://github.com/Garech-mas/DoubleBPMGrid)を導入している場合，[「左/右にグリッド基準線を移動(BPM)」](#左右にグリッド基準線を移動bpm)などの BPM グリッド変更コマンドを使用しても，BPMグリッド倍化プラグインの GUI に変更が反映されません．一部のコマンドはBPMグリッド倍化プラグイン側で同等のものがあるため，そちらを優先して使用してください．
 
 1.  動画オブジェクトやシーンオブジェクトなどに[「選択オブジェクトの始点を伸ばす」](#選択オブジェクトの始点終点を伸ばす)のコマンドを使用した場合，動画やシーンの開始時刻は連動して変化しません．
+
+##  次の改版予定
+
+- **v1.61 (for beta53a)** (2026-??-??)
+
+  - BPM グリッド関連のコマンドを，複数の BPM グリッド設定に対応．
+
+  - `beta53a` での動作確認．
 
 ##  改版履歴
 
