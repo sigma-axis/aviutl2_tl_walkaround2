@@ -1986,7 +1986,7 @@ static void duplicate_object_to_right(EDIT_SECTION* edit)
 			auto const other = edit->find_object(pos.layer, pos.start + cand_offset);
 			if (other == nullptr) continue;
 			auto const other_pos = edit->get_object_layer_frame(other);
-			if (other_pos.start <= pos.end) {
+			if (other_pos.start <= pos.end + cand_offset) {
 				cand_offset = other_pos.end + 1 - pos.start;
 				goto fail;
 			}
