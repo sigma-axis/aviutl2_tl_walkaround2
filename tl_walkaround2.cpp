@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.70 (for beta53a)"
+#define PLUGIN_VERSION	"v1.80-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0beta53a"
 constexpr uint32_t least_aviutl2_ver_num = 2005301;
@@ -1938,6 +1938,72 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 }
 
 ////////////////////////////////
+// duplicating objects.
+////////////////////////////////
+static void duplicate_object_to_right(EDIT_SECTION* edit)
+{
+	std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> targets{};
+
+	// collect target objects.
+	if (int const n = edit->get_selected_object_num(); n > 0) {
+		auto const focused_obj = edit->get_focus_object();
+		for (int i = 0; i < n; i++) {
+			auto obj = edit->get_selected_object(i);
+			targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
+		}
+	}
+	else if (auto const obj = edit->get_focus_object(); obj != nullptr)
+		targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
+	if (targets.empty()) return; // no operation.
+
+	// get their positions.
+	for (auto& [obj, pos] : targets)
+		pos = edit->get_object_layer_frame(obj);
+
+	// sort by layer and then start position.
+	std::sort(targets.begin(), targets.end(), [](auto const& p1, auto const& p2) -> bool {
+		auto const& pos1 = p1.second;
+		auto const& pos2 = p2.second;
+		return pos1.layer < pos2.layer ||
+			(pos1.layer == pos2.layer && pos1.start < pos2.start);
+	});
+
+	// find the maximum frame span for each layer that target objects exist.
+	int cand_offset = 0;
+	for (int l = -1, s = 0, e = 0, i = 0; i < static_cast<int>(targets.size()); i++) {
+		auto const& [_, pos] = targets[i];
+		if (l != pos.layer) {
+			l = pos.layer;
+			s = pos.start;
+		}
+		e = pos.end + 1;
+		cand_offset = std::max(cand_offset, e - s);
+	}
+
+	// check collisions.
+	while (true) {
+		for (auto const& [_, pos] : targets) {
+			auto const other = edit->find_object(pos.layer, pos.start + cand_offset);
+			if (other == nullptr) continue;
+			auto const other_pos = edit->get_object_layer_frame(other);
+			if (other_pos.start <= pos.end) {
+				cand_offset = other_pos.end + 1 - pos.start;
+				goto fail;
+			}
+		}
+		break;
+		fail:
+	}
+
+	// duplicate objects with the found offset.
+	for (auto const& [obj, pos] : targets) {
+		std::string const alias = edit->get_object_alias(obj);
+		edit->create_object_from_alias(alias.c_str(),
+			pos.layer, pos.start + cand_offset, pos.end - pos.start + 1);
+	}
+}
+
+////////////////////////////////
 // time stretching operations.
 ////////////////////////////////
 static std::string time_changed_object(EDIT_SECTION* edit, OBJECT_HANDLE obj, int pos_start, int pos_end)
@@ -2401,6 +2467,9 @@ constexpr struct {
 		move_selected_objects(edit, Direction::Down);
 	}
 	},
+
+	// object duplication menu items.
+	{ L"オブジェクトを右へ複製", &duplicate_object_to_right },
 
 	// object stretching menu items.
 	{ L"選択オブジェクトの始点を伸ばす", [](EDIT_SECTION* edit)
