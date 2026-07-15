@@ -44,8 +44,8 @@ namespace logging = AviUtl2::logging;
 #define PLUGIN_NAME		L"TLショトカ移動2"
 #define PLUGIN_VERSION	"v1.80-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
-#define LEAST_AVIUTL2_VER_STR	"version 2.0beta53a"
-constexpr uint32_t least_aviutl2_ver_num = 2005301;
+#define LEAST_AVIUTL2_VER_STR	"version 2.0.54"
+constexpr uint32_t least_aviutl2_ver_num = 2005400;
 
 
 ////////////////////////////////
@@ -2468,9 +2468,6 @@ constexpr struct {
 	}
 	},
 
-	// object duplication menu items.
-	{ L"オブジェクトを右へ複製", &duplicate_object_to_right },
-
 	// object stretching menu items.
 	{ L"選択オブジェクトの始点を伸ばす", [](EDIT_SECTION* edit)
 	{
@@ -2492,6 +2489,9 @@ constexpr struct {
 		stretch_selected_objects(edit, true, edit->info->frame);
 	}
 	},
+
+	// object duplication menu items.
+	{ L"オブジェクトを右へ複製", &duplicate_object_to_right },
 
 	// cursor undo menu items.
 	{ L"カーソル位置を元に戻す", &cursor_undo },
@@ -2531,6 +2531,9 @@ obj_menu_items[] = {
 		stretch_selected_objects(edit, true, edit->info->frame);
 	}
 	},
+
+	// object duplication menu items.
+	{ L"オブジェクトを右へ複製", &duplicate_object_to_right },
 };
 #undef NAME
 

@@ -43,9 +43,7 @@ jobs:
       - name: Set package version
         run: |
           cd .\assets
-          $tag = '${{ github.ref_name }}'
-          $tag_name = $tag -replace '(.*?)-(.*)','$1 ($2)' -replace '-',' '
-          (Get-Content .\package.ini -Raw) -replace '\${ver}', $tag_name | Set-Content .\package.ini
+          (Get-Content .\package.ini -Raw) -replace '\${ver}', '${{ github.ref_name }}' | Set-Content .\package.ini
 
       - name: Pack into a folder
         run: |
