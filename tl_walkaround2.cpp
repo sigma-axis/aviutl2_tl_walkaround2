@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.80"
+#define PLUGIN_VERSION	"v1.81-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0.54"
 constexpr uint32_t least_aviutl2_ver_num = 2005400;
@@ -1957,27 +1957,10 @@ static void duplicate_object_to_right(EDIT_SECTION* edit)
 	if (targets.empty()) return; // no operation.
 
 	// get their positions.
-	for (auto& [obj, pos] : targets)
-		pos = edit->get_object_layer_frame(obj);
-
-	// sort by layer and then start position.
-	std::sort(targets.begin(), targets.end(), [](auto const& p1, auto const& p2) -> bool {
-		auto const& pos1 = p1.second;
-		auto const& pos2 = p2.second;
-		return pos1.layer < pos2.layer ||
-			(pos1.layer == pos2.layer && pos1.start < pos2.start);
-	});
-
-	// find the maximum frame span for each layer that target objects exist.
 	int cand_offset = 0;
-	for (int l = -1, s = 0, e = 0, i = 0; i < static_cast<int>(targets.size()); i++) {
-		auto const& [_, pos] = targets[i];
-		if (l != pos.layer) {
-			l = pos.layer;
-			s = pos.start;
-		}
-		e = pos.end + 1;
-		cand_offset = std::max(cand_offset, e - s);
+	for (auto& [obj, pos] : targets) {
+		pos = edit->get_object_layer_frame(obj);
+		cand_offset = std::max(cand_offset, pos.end + 1 - pos.start);
 	}
 
 	// check collisions.
