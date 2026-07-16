@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.82-wip"
+#define PLUGIN_VERSION	"v1.82"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0.54"
 constexpr uint32_t least_aviutl2_ver_num = 2005400;
