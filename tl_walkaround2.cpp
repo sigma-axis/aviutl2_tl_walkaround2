@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.81"
+#define PLUGIN_VERSION	"v1.82-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0.54"
 constexpr uint32_t least_aviutl2_ver_num = 2005400;
@@ -61,7 +61,7 @@ constinit struct Settings {
 	constexpr static std::wstring_view name##_key = L## #name
 #define decl_prop_minmax(type, name, def, min, max)	\
 	decl_prop(type, name, def); \
-	constexpr static type name##_min = (min), name##_max = (max);
+	constexpr static type name##_min = (min), name##_max = (max)
 
 	enum class ignore_layer : uint32_t {
 		none = 0,
@@ -1945,22 +1945,32 @@ static void duplicate_object_to_right(EDIT_SECTION* edit)
 	std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> targets{};
 
 	// collect target objects.
+	auto focused = edit->get_focus_object();
 	if (int const n = edit->get_selected_object_num(); n > 0) {
-		auto const focused_obj = edit->get_focus_object();
 		for (int i = 0; i < n; i++) {
-			auto obj = edit->get_selected_object(i);
+			auto const obj = edit->get_selected_object(i);
 			targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
 		}
 	}
-	else if (auto const obj = edit->get_focus_object(); obj != nullptr)
-		targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
+	else if (focused != nullptr)
+		targets.emplace_back(focused, OBJECT_LAYER_FRAME{});
 	if (targets.empty()) return; // no operation.
 
 	// get their positions.
 	int cand_offset = 0;
+	bool contains_focused = false;
 	for (auto& [obj, pos] : targets) {
 		pos = edit->get_object_layer_frame(obj);
 		cand_offset = std::max(cand_offset, pos.end + 1 - pos.start);
+
+		if (obj == focused) contains_focused = true;
+	}
+	if (!contains_focused) {
+		// assume the top-left object takes the focus.
+		focused = std::min_element(targets.begin(), targets.end(), [](auto const& l, auto const& r) {
+			return l.second.layer < r.second.layer ||
+				(l.second.layer == r.second.layer && l.second.start < r.second.start);
+		})->first;
 	}
 
 	// check collisions.
@@ -1981,8 +1991,12 @@ static void duplicate_object_to_right(EDIT_SECTION* edit)
 	// duplicate objects with the found offset.
 	for (auto const& [obj, pos] : targets) {
 		std::string const alias = edit->get_object_alias(obj);
-		edit->create_object_from_alias(alias.c_str(),
+		auto const new_obj = edit->create_object_from_alias(alias.c_str(),
 			pos.layer, pos.start + cand_offset, pos.end - pos.start + 1);
+
+		// move the focus if the original is focused.
+		if (obj == focused && new_obj != nullptr)
+			edit->set_focus_object(new_obj);
 	}
 }
 
