@@ -42,7 +42,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.82"
+#define PLUGIN_VERSION	"v1.82-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.0.54"
 constexpr uint32_t least_aviutl2_ver_num = 2005400;
@@ -2374,6 +2374,12 @@ constexpr struct {
 		focus_above_below_layer_object(edit, true);
 	}
 	},
+	{ L"オブジェクトの選択を解除", [](EDIT_SECTION* edit)
+	{
+		edit->set_focus_object(nullptr);
+	}
+	},
+
 	{ L"上のレイヤーを選択", [](EDIT_SECTION* edit)
 	{
 		edit->set_cursor_layer_frame(edit->info->layer - 1, edit->info->frame);
