@@ -24,6 +24,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 #include <tuple>
 #include <string>
 #include <string_view>
+#include <ranges>
 #include <cassert>
 
 #define NOMINMAX
@@ -411,6 +412,19 @@ static wchar_t const* translate(wchar_t const* text, wchar_t const* section = nu
 		(L"Plugin." PLUGIN_NAME), text);
 }
 
+static std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> get_selected_objects(EDIT_SECTION* edit)
+{
+	std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> ret{};
+	if (int const n = edit->get_selected_object_num(); n > 0) {
+		for (int i = 0; i < n; i++)
+			ret.emplace_back(edit->get_selected_object(i), OBJECT_LAYER_FRAME{});
+	}
+	else if (auto const obj = edit->get_focus_object(); obj != nullptr)
+		ret.emplace_back(obj, OBJECT_LAYER_FRAME{});
+	for (auto& [obj, pos] : ret)
+		pos = edit->get_object_layer_frame(obj);
+	return ret;
+}
 
 ////////////////////////////////
 // window message handler.
@@ -1731,15 +1745,7 @@ enum class Direction {
 };
 static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 {
-	std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> targets{};
-
-	// collect target objects.
-	if (int const n = edit->get_selected_object_num(); n > 0) {
-		for (int i = 0; i < n; i++)
-			targets.emplace_back(edit->get_selected_object(i), OBJECT_LAYER_FRAME{});
-	}
-	else if (auto const obj = edit->get_focus_object(); obj != nullptr)
-		targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
+	auto targets = get_selected_objects(edit);
 	if (targets.empty()) return; // no operation.
 
 	// get their positions and min/max of the range.
@@ -1748,8 +1754,7 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 		layer_max = 0,
 		frame_min = edit->info->frame_max,
 		frame_max = 0;
-	for (auto& [obj, pos] : targets) {
-		pos = edit->get_object_layer_frame(obj);
+	for (auto const& [obj, pos] : targets) {
 		layer_min = std::min(layer_min, pos.layer);
 		layer_max = std::max(layer_max, pos.layer);
 		frame_min = std::min(frame_min, pos.start);
@@ -1942,25 +1947,14 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 ////////////////////////////////
 static void duplicate_object_to_right(EDIT_SECTION* edit)
 {
-	std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> targets{};
-
-	// collect target objects.
-	auto focused = edit->get_focus_object();
-	if (int const n = edit->get_selected_object_num(); n > 0) {
-		for (int i = 0; i < n; i++) {
-			auto const obj = edit->get_selected_object(i);
-			targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
-		}
-	}
-	else if (focused != nullptr)
-		targets.emplace_back(focused, OBJECT_LAYER_FRAME{});
+	auto targets = get_selected_objects(edit);
 	if (targets.empty()) return; // no operation.
+	auto focused = edit->get_focus_object();
 
 	// get their positions.
 	int cand_offset = 0;
 	bool contains_focused = false;
-	for (auto& [obj, pos] : targets) {
-		pos = edit->get_object_layer_frame(obj);
+	for (auto const& [obj, pos] : targets) {
 		cand_offset = std::max(cand_offset, pos.end + 1 - pos.start);
 
 		if (obj == focused) contains_focused = true;
@@ -2057,28 +2051,13 @@ static int calc_stretched_frame(int frame, double length, EDIT_INFO const* info)
 
 static void stretch_selected_objects(EDIT_SECTION* edit, bool forward, int absolute_frame = -1)
 {
-	std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> targets{};
-	int focused_idx = -1; // bool was_selected = false;
-
-	// collect target objects.
-	if (int const n = edit->get_selected_object_num(); n > 0) {
-		//was_selected = true;
-		auto const focused_obj = edit->get_focus_object();
-		for (int i = 0; i < n; i++) {
-			auto obj = edit->get_selected_object(i);
-			targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
-			if (focused_obj == obj) focused_idx = i;
-		}
-	}
-	else if (auto const obj = edit->get_focus_object(); obj != nullptr) {
-		targets.emplace_back(obj, OBJECT_LAYER_FRAME{});
-		focused_idx = 0;
-	}
+	auto targets = get_selected_objects(edit);
 	if (targets.empty()) return; // no operation.
-
-	// get their positions.
-	for (auto& [obj, pos] : targets)
-		pos = edit->get_object_layer_frame(obj);
+	int focused_idx = static_cast<int>(std::find_if(targets.begin(), targets.end(),
+		[edit, focused = edit->get_focus_object()](auto const& p) { return p.first == focused; }
+	) - targets.begin());
+	if (focused_idx == targets.size()) focused_idx = -1;
+	// bool was_selected = edit->get_selected_object_num() > 0;
 
 	// then move the starting and ending positions.
 	uint32_t stretched_count = 0;
@@ -2183,6 +2162,25 @@ static void cursor_redo(EDIT_SECTION* edit)
 			cursor_undo_queues.reset_cooltime();
 		}
 	}
+}
+
+
+////////////////////////////////
+// layer operations.
+////////////////////////////////
+static void toggle_layer_enable(EDIT_SECTION* edit)
+{
+	auto targets =std::map<int, bool>{ std::from_range,
+		get_selected_objects(edit)
+		| std::views::transform([](auto const& p) { return std::make_pair(p.second.layer, false); }) };
+	if (targets.empty()) return; // no operation.
+	bool result_state = true;
+	for (auto& [layer, state] : targets) {
+		state = edit->get_layer_enable(layer);
+		result_state &= !state;
+	}
+	for (auto& [layer, state] : targets)
+		edit->set_layer_enable(layer, result_state);
 }
 
 
@@ -2496,6 +2494,9 @@ constexpr struct {
 	// object duplication menu items.
 	{ L"オブジェクトを右へ複製", &duplicate_object_to_right },
 
+	// layer operations menu items.
+	{ L"選択オブジェクトのレイヤーを表示/非表示", &toggle_layer_enable },
+
 	// cursor undo menu items.
 	{ L"カーソル位置を元に戻す", &cursor_undo },
 	{ L"カーソル位置をやり直す", &cursor_redo },
@@ -2537,6 +2538,9 @@ obj_menu_items[] = {
 
 	// object duplication menu items.
 	{ L"オブジェクトを右へ複製", &duplicate_object_to_right },
+
+	// layer operations menu items.
+	{ L"選択オブジェクトのレイヤーを表示/非表示", &toggle_layer_enable },
 };
 #undef NAME
 
