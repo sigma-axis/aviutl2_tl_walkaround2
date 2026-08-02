@@ -42,10 +42,10 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v1.90"
+#define PLUGIN_VERSION	"v2.00-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
-#define LEAST_AVIUTL2_VER_STR	"version 2.1.1"
-constexpr uint32_t least_aviutl2_ver_num = 2010100;
+#define LEAST_AVIUTL2_VER_STR	"version 2.1.3"
+constexpr uint32_t least_aviutl2_ver_num = 2010300;
 
 
 ////////////////////////////////
@@ -1655,7 +1655,7 @@ static void move_to_bpm_grid(EDIT_SECTION* edit, int tempo_factor_num, int tempo
 		// stop at the boundary of BPM grid settings.
 		if (it_bpm != bpm_list.end() - 1) {
 			auto const it_next = it_bpm + 1;
-			int const cand = static_cast<int>(std::floor(
+			int const cand = static_cast<int>(std::ceil(
 				it_next->start * edit->info->rate / edit->info->scale));
 			if (cand > curr_frame) next_frame = std::min(next_frame, cand);
 		}
@@ -1667,7 +1667,7 @@ static void move_to_bpm_grid(EDIT_SECTION* edit, int tempo_factor_num, int tempo
 		next_frame = bpm_calc.beat_to_frame_int(target_beat);
 
 		// stop at the boundary of BPM grid settings.
-		int const cand = static_cast<int>(std::floor(
+		int const cand = static_cast<int>(std::ceil(
 			it_bpm->start * edit->info->rate / edit->info->scale));
 		if (cand < curr_frame) next_frame = std::max(next_frame, cand);
 	}
