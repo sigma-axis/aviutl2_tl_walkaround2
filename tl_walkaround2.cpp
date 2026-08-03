@@ -410,9 +410,9 @@ static std::vector<BPM_INFO> get_bpm_info(EDIT_SECTION* edit)
 }
 static constexpr auto find_bpm_grid_at(std::vector<BPM_INFO>& bpm_list, int frame, int rate, int scale)
 {
-	double const t = static_cast<double>(frame + 1) * scale / rate, dt = static_cast<double>(scale) / rate;
+	double const t = static_cast<double>(frame) * scale / rate;
 	return std::partition_point(bpm_list.begin() + 1, bpm_list.end(),
-		[T = std::max(bpm_list.front().start + dt, t)](BPM_INFO const& info) { return info.start < T; }) - 1;
+		[T = std::max(bpm_list.front().start, t)](BPM_INFO const& info) { return info.start <= T; }) - 1;
 }
 
 static wchar_t const* translate(wchar_t const* text, wchar_t const* section = nullptr)
@@ -1698,7 +1698,7 @@ static void move_to_bpm_grid(EDIT_SECTION* edit, int tempo_factor_num, int tempo
 	auto bpm_list = get_bpm_info(edit);
 	auto it_bpm = find_bpm_grid_at(bpm_list, curr_frame, tl_calc.rate, tl_calc.scale);
 	if (!forward &&
-		static_cast<int>(std::floor(tl_calc.second_to_frame(it_bpm->start))) >= curr_frame &&
+		static_cast<int>(std::ceil(tl_calc.second_to_frame(it_bpm->start))) >= curr_frame &&
 		it_bpm != bpm_list.begin()) it_bpm--;
 
 	// find the nearest BPM grid point.
@@ -2261,7 +2261,7 @@ static void layer_follow_focus()
 	if (curr_layer == target_layer) return;
 
 	// cannot skip changing the selected layer.
-	// as call_edit_section() cannot be called within this callback, post a callback to change the selected layer.
+	// as call_edit_section() cannot be called within this callback, post a window message callback to call it.
 	plugin_window.post_callback([](auto target_layer) static
 	{
 		edit_handle->call_edit_section_param(&target_layer, [](void* p_target, EDIT_SECTION* edit) static
