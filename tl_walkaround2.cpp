@@ -2029,7 +2029,7 @@ static void duplicate_object_to_right(EDIT_SECTION* edit)
 			}
 		}
 		break;
-		fail:
+	fail:
 	}
 
 	// duplicate objects with the found offset.
@@ -2238,8 +2238,38 @@ static void toggle_layer_enable(EDIT_SECTION* edit)
 		state = edit->get_layer_enable(layer);
 		result_state &= !state;
 	}
-	for (auto& [layer, state] : targets)
+	for (auto& [layer, _] : targets)
 		edit->set_layer_enable(layer, result_state);
+}
+
+static void layer_follow_focus()
+{
+	if (!settings.navigation.layer_follows_focus) return;
+
+	// as changing the selected layer causes an extra rendering, suppress it if possible.
+	// check if the selected layer should change.
+	int const curr_layer = get_edit_info().layer;
+	int target_layer = curr_layer;
+	edit_handle->call_read_section_param(&target_layer, [](void* p_ret, EDIT_SECTION* edit) static
+	{
+		// retrieve the layer of the focused object.
+		auto const obj = edit->get_focus_object();
+		if (obj == nullptr) return;
+		int& ret = *static_cast<int*>(p_ret);
+		ret = edit->get_object_layer_frame(obj).layer;
+	});
+	if (curr_layer == target_layer) return;
+
+	// cannot skip changing the selected layer.
+	// as call_edit_section() cannot be called within this callback, post a callback to change the selected layer.
+	plugin_window.post_callback([](auto target_layer) static
+	{
+		edit_handle->call_edit_section_param(&target_layer, [](void* p_target, EDIT_SECTION* edit) static
+		{
+			int const target = *static_cast<int*>(p_target);
+			edit->set_cursor_layer_frame(target, edit->info->frame);
+		});
+	}, static_cast<uintptr_t>(target_layer));
 }
 
 
@@ -2268,31 +2298,7 @@ static void on_update_object(void* param)
 
 static void on_change_focus_object(void* param)
 {
-	if (settings.navigation.layer_follows_focus) {
-		// as changing the selected layer causes an extra rendering, suppress it if possible.
-		// check if the selected layer should change.
-		int const curr_layer = get_edit_info().layer;
-		int target_layer = curr_layer;
-		edit_handle->call_read_section_param(&target_layer, [](void* p_ret, EDIT_SECTION* edit) static
-		{
-			int& ret = *static_cast<int*>(p_ret);
-			auto const obj = edit->get_focus_object();
-			if (obj == nullptr) return;
-			ret = edit->get_object_layer_frame(obj).layer;
-		});
-		if (curr_layer != target_layer) {
-			// cannot skip changing the selected layer.
-			// as call_edit_section() cannot be called within this callback, post a callback to change the selected layer.
-			plugin_window.post_callback([](auto target_layer) static
-			{
-				edit_handle->call_edit_section_param(&target_layer, [](void* p_target, EDIT_SECTION* edit) static
-				{
-					int const target = *static_cast<int*>(p_target);
-					edit->set_cursor_layer_frame(target, edit->info->frame);
-				});
-			}, static_cast<uintptr_t>(target_layer));
-		}
-	}
+	layer_follow_focus();
 }
 
 
