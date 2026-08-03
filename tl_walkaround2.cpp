@@ -43,7 +43,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v2.00"
+#define PLUGIN_VERSION	"v2.10"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.1.3"
 constexpr uint32_t least_aviutl2_ver_num = 2010300;
@@ -90,6 +90,12 @@ constinit struct Settings {
 
 		constexpr static std::wstring_view section = L"stretch";
 	} stretch;
+
+	struct {
+		decl_prop(bool, layer_follows_focus, false);
+
+		constexpr static std::wstring_view section = L"navigation";
+	} navigation;
 
 	struct {
 		decl_prop_minmax(int, queue_size, 1 << 8, 1 << 4, 1 << 14);
@@ -172,6 +178,8 @@ public:
 		}
 		read_double	(stretch, length);
 
+		read_bool	(navigation, layer_follows_focus);
+
 		read_int	(cursor_undo, queue_size);
 		read_double	(cursor_undo, polling_cooltime);
 
@@ -200,6 +208,8 @@ public:
 
 		write_val	(stretch, unit, std::to_underlying, L"%d");
 		write_val	(stretch, length, , L"%.3f");
+
+		write_bool	(navigation, layer_follows_focus);
 
 		// even though cursor_undo can't change during runtime, save it
 		// so missing .ini file will be fully generated.
@@ -453,6 +463,8 @@ private:
 			stretch_label,
 			stretch_length_edit,
 			stretch_unit_combo,
+
+			layer_focus_check,
 		};
 	};
 	struct prv_mes {
@@ -488,6 +500,9 @@ private:
 			HWND edit = nullptr;
 			HWND combo = nullptr;
 		} stretch;
+		struct {
+			HWND check = nullptr;
+		} layer_focus{};
 		HFONT gui_font = nullptr;
 		int label_width = -1;
 		bool initialized() const { return gui_font != nullptr; }
@@ -555,6 +570,10 @@ private:
 			X += repos(stretch.label, label_width, edit_height - pad_y, X, Y + pad_y) + margin_1;
 			X += repos(stretch.edit, edit_width_1, edit_height, X, Y) + margin_1;
 			X += repos(stretch.combo, edit_width_1, edit_height, X, Y);
+
+			// layer-focus control.
+			X = margin_1; Y += unit_height_1;
+			X += repos(layer_focus.check, client.right - 2 * margin_1, edit_height, X, Y);
 		}
 		void size_changed(int width, int height)
 		{
@@ -704,6 +723,13 @@ private:
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::stretch_unit_combo), hinst, nullptr);
 
+		// layer-focus control.
+		ctrl.layer_focus.check = ::CreateWindowExW(
+			0, WC_BUTTONW, translate(L"オブジェクト選択時にレイヤーも選択"),
+			WS_VISIBLE | WS_CHILD | BS_CHECKBOX | BS_AUTOCHECKBOX,
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			root, id(ctrl_ids::layer_focus_check), hinst, nullptr);
+
 		// set slider properties.
 		::SendMessageW(ctrl.page_rate.slider, TBM_SETRANGE, TRUE, MAKELPARAM(
 			static_cast<int>(settings.search.page_rate_min * ctrl.page_rate.slider_resolution),
@@ -720,6 +746,7 @@ private:
 		// set checkbox state.
 		::SendMessageW(ctrl.suppress_shift.check, BM_SETCHECK, settings.search.suppress_shift ? BST_CHECKED : BST_UNCHECKED, 0);
 		::SendMessageW(ctrl.focus_follows.check, BM_SETCHECK, settings.search.focus_follows ? BST_CHECKED : BST_UNCHECKED, 0);
+		::SendMessageW(ctrl.layer_focus.check, BM_SETCHECK, settings.navigation.layer_follows_focus ? BST_CHECKED : BST_UNCHECKED, 0);
 
 		// set combo box items and selection.
 		::SendMessageW(ctrl.ignore_layers.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(translate(L"なし")));
@@ -745,6 +772,7 @@ private:
 			ctrl.stretch.label,
 			ctrl.stretch.combo,
 			ctrl.stretch.edit,
+			ctrl.layer_focus.check,
 		}) ::SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(ctrl.gui_font), TRUE);
 
 		// set subclass procedures for tab-navigation.
@@ -757,6 +785,7 @@ private:
 			ctrl.focus_follows.check,
 			ctrl.stretch.edit,
 			ctrl.stretch.combo,
+			ctrl.layer_focus.check,
 		}) ::SetWindowSubclass(control, tab_navigation_proc, reinterpret_cast<UINT_PTR>(this), {});
 
 		// initialize the layout.
@@ -983,6 +1012,15 @@ private:
 		}
 	}
 
+	void sync_layer_focus() const
+	{
+		settings.navigation.layer_follows_focus =
+			::SendMessageW(ctrl.layer_focus.check, BM_GETCHECK, 0, 0) == BST_CHECKED;
+
+		// logging.
+		logging::verbose(L"Settings synchronized: settings.navigation.layer_follows_focus.");
+	}
+
 	static LRESULT CALLBACK tab_navigation_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id, DWORD_PTR data)
 	{
 		PluginWindow* const that = reinterpret_cast<PluginWindow*>(id);
@@ -1003,6 +1041,7 @@ private:
 					that->ctrl.focus_follows.check,
 					that->ctrl.stretch.edit,
 					that->ctrl.stretch.combo,
+					that->ctrl.layer_focus.check,
 				};
 				size_t i = std::find(std::begin(controls), std::end(controls), hwnd) - std::begin(controls);
 				if (i >= std::size(controls)) [[unlikely]] break; // not found.
@@ -1196,6 +1235,17 @@ private:
 				case CBN_SELCHANGE:
 				{
 					sync_stretch_time(true, false);
+					return 0;
+				}
+				}
+				break;
+			}
+			case ctrl_ids::layer_focus_check:
+			{
+				switch (HIWORD(wparam)) {
+				case BN_CLICKED:
+				{
+					sync_layer_focus();
 					return 0;
 				}
 				}
@@ -2117,53 +2167,62 @@ static void stretch_selected_objects(EDIT_SECTION* edit, bool forward, int absol
 ////////////////////////////////
 // cursor undo operations.
 ////////////////////////////////
-static void on_scene_changed(void* param)
+namespace cursor_undo
 {
-	// prepare the undo history for this scene, if not created yet.
-	auto const info = get_edit_info();
-	cursor_undo_queues.set_key(info.scene_id, info.frame);
-	cursor_undo_queues.reset_cooltime();
-}
+	static void on_load_project()
+	{
+		// clear the queue.
+		cursor_undo_queues.clear();
+		logging::verbose(L"Cursor undo buffer cleared.");
+	}
 
-static void on_frame_changed(void* param)
-{
-	// suppress polling for a certain amount of time.
-	if (cursor_undo_queues.check_cooltime()) return;
-
-	// update the history.
-	if (auto* queue = cursor_undo_queues.current(); queue != nullptr)
-		queue->check_forward(get_edit_info().frame);
-}
-
-static void on_update_object(void* param)
-{
-	if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
-		queue->check_forward(get_edit_info().frame);
+	static void on_scene_changed()
+	{
+		// prepare the undo history for this scene, if not created yet.
+		auto const info = get_edit_info();
+		cursor_undo_queues.set_key(info.scene_id, info.frame);
 		cursor_undo_queues.reset_cooltime();
 	}
-}
 
-static void cursor_undo(EDIT_SECTION* edit)
-{
-	if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
-		if (queue->size() <= 1) return;
-		queue->check_forward(get_edit_info().frame); // push the current as a redo target.
-		move_frame_wrap(edit, edit->info->layer, queue->backward());
-		cursor_undo_queues.reset_cooltime();
+	static void on_frame_changed()
+	{
+		// suppress polling for a certain amount of time.
+		if (cursor_undo_queues.check_cooltime()) return;
+
+		// update the history.
+		if (auto* queue = cursor_undo_queues.current(); queue != nullptr)
+			queue->check_forward(get_edit_info().frame);
 	}
-}
 
-static void cursor_redo(EDIT_SECTION* edit)
-{
-	if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
-		queue->check_forward(edit->info->frame);
-		if (int next_frame; queue->repush(next_frame)) {
-			move_frame_wrap(edit, edit->info->layer, next_frame);
+	static void on_update_object()
+	{
+		if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
+			queue->check_forward(get_edit_info().frame);
 			cursor_undo_queues.reset_cooltime();
 		}
 	}
-}
 
+	static void undo(EDIT_SECTION* edit)
+	{
+		if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
+			if (queue->size() <= 1) return;
+			queue->check_forward(get_edit_info().frame); // push the current as a redo target.
+			move_frame_wrap(edit, edit->info->layer, queue->backward());
+			cursor_undo_queues.reset_cooltime();
+		}
+	}
+
+	static void redo(EDIT_SECTION* edit)
+	{
+		if (auto* queue = cursor_undo_queues.current(); queue != nullptr) {
+			queue->check_forward(edit->info->frame);
+			if (int next_frame; queue->repush(next_frame)) {
+				move_frame_wrap(edit, edit->info->layer, next_frame);
+				cursor_undo_queues.reset_cooltime();
+			}
+		}
+	}
+}
 
 ////////////////////////////////
 // layer operations.
@@ -2189,9 +2248,38 @@ static void toggle_layer_enable(EDIT_SECTION* edit)
 ////////////////////////////////
 static void on_load_project(PROJECT_FILE* project)
 {
-	// clear the queue.
-	cursor_undo_queues.clear();
-	logging::verbose(L"Cursor undo buffer cleared.");
+	cursor_undo::on_load_project();
+}
+
+static void on_scene_changed(void* param)
+{
+	cursor_undo::on_scene_changed();
+}
+
+static void on_frame_changed(void* param)
+{
+	cursor_undo::on_frame_changed();
+}
+
+static void on_update_object(void* param)
+{
+	cursor_undo::on_update_object();
+}
+
+static void on_change_focus_object(void* param)
+{
+	if (settings.navigation.layer_follows_focus) {
+		plugin_window.post_callback([](auto _) {
+			if (edit_handle != nullptr) {
+				edit_handle->call_edit_section([](EDIT_SECTION* edit) {
+					auto const obj = edit->get_focus_object();
+					if (obj == nullptr) return;
+					auto const pos = edit->get_object_layer_frame(obj);
+					edit->set_cursor_layer_frame(pos.layer, edit->info->frame);
+				});
+			}
+		}, {});
+	}
 }
 
 
@@ -2498,8 +2586,8 @@ constexpr struct {
 	{ L"選択オブジェクトのレイヤーを表示/非表示", &toggle_layer_enable },
 
 	// cursor undo menu items.
-	{ L"カーソル位置を元に戻す", &cursor_undo },
-	{ L"カーソル位置をやり直す", &cursor_redo },
+	{ L"カーソル位置を元に戻す", &cursor_undo::undo },
+	{ L"カーソル位置をやり直す", &cursor_undo::redo },
 },
 obj_menu_items[] = {
 	// object moving menu items.
@@ -2643,4 +2731,5 @@ extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 	host->register_event_listener(EVENT_TYPE::CHANGE_EDIT_SCENE, nullptr, &on_scene_changed);
 	host->register_event_listener(EVENT_TYPE::CHANGE_EDIT_FRAME, nullptr, &on_frame_changed);
 	host->register_event_listener(EVENT_TYPE::UPDATE_OBJECT, nullptr, &on_update_object);
+	host->register_event_listener(EVENT_TYPE::CHANGE_FOCUS_OBJECT, nullptr, &on_change_focus_object);
 }
