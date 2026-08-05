@@ -2028,23 +2028,29 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 	}
 	}
 
-	// adjust the scroll if focused object moved.
-	if (settings.navigation.scroll_follows_focus) {
+	// change the selected layer or adjust the scroll if focused object moved.
+	if (settings.navigation.layer_follows_focus || settings.navigation.scroll_follows_focus) {
 		auto const focused = edit->get_focus_object();
 		if (std::find_if(targets.begin(), targets.end(), [focused](auto pair) { return pair.first == focused; })
 			!= targets.end()) {
 			auto const pos = edit->get_object_layer_frame(focused);
-			auto const [layer, frame, do_move] = calc_scroll_pos(*edit->info, pos);
-			if (do_move) {
-				// scroll in a different edit_section, otherwise infinite loop.
-				plugin_window.post_callback([](auto layer_frame) {
-					edit_handle->call_edit_section_param(&layer_frame, [](void* param, EDIT_SECTION* edit) {
-						uint64_t const& layer_frame = *static_cast<uint64_t*>(param);
-						int32_t const layer = static_cast<int>(layer_frame & 0xffffffff),
-						frame = static_cast<int>((layer_frame >> 32) & 0xffffffff);
-						edit->set_display_layer_frame(layer, frame);
-					});
-				}, static_cast<uint32_t>(layer) | (static_cast<uint64_t>(frame) << 32));
+			if (settings.navigation.layer_follows_focus) {
+				if (pos.layer != edit->info->layer)
+					edit->set_cursor_layer_frame(pos.layer, edit->info->frame);
+			}
+			if (settings.navigation.scroll_follows_focus) {
+				auto const [layer, frame, do_move] = calc_scroll_pos(*edit->info, pos);
+				if (do_move) {
+					// scroll in a different edit_section, otherwise infinite loop.
+					plugin_window.post_callback([](auto layer_frame) {
+						edit_handle->call_edit_section_param(&layer_frame, [](void* param, EDIT_SECTION* edit) {
+							uint64_t const& layer_frame = *static_cast<uint64_t*>(param);
+							int32_t const layer = static_cast<int>(layer_frame & 0xffffffff),
+							frame = static_cast<int>((layer_frame >> 32) & 0xffffffff);
+							edit->set_display_layer_frame(layer, frame);
+						});
+					}, static_cast<uint32_t>(layer) | (static_cast<uint64_t>(frame) << 32));
+				}
 			}
 		}
 	}
