@@ -43,7 +43,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v2.20"
+#define PLUGIN_VERSION	"v2.21-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.1.3"
 constexpr uint32_t least_aviutl2_ver_num = 2010300;
@@ -2034,9 +2034,19 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 		auto const focused = edit->get_focus_object();
 		if (std::find_if(targets.begin(), targets.end(), [focused](auto pair) { return pair.first == focused; })
 			!= targets.end()) {
-			auto const [layer, frame, do_move] =
-				calc_scroll_pos(*edit->info, edit->get_object_layer_frame(focused));
-			if (do_move) edit->set_display_layer_frame(layer, frame);
+			auto const pos = edit->get_object_layer_frame(focused);
+			auto const [layer, frame, do_move] = calc_scroll_pos(*edit->info, pos);
+			if (do_move) {
+				// scroll in a different edit_section, otherwise infinite loop.
+				plugin_window.post_callback([](auto layer_frame) {
+					edit_handle->call_edit_section_param(&layer_frame, [](void* param, EDIT_SECTION* edit) {
+						uint64_t const& layer_frame = *static_cast<uint64_t*>(param);
+						int32_t const layer = static_cast<int>(layer_frame & 0xffffffff),
+						frame = static_cast<int>((layer_frame >> 32) & 0xffffffff);
+						edit->set_display_layer_frame(layer, frame);
+					});
+				}, static_cast<uint32_t>(layer) | (static_cast<uint64_t>(frame) << 32));
+			}
 		}
 	}
 
