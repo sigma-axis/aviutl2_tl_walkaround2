@@ -43,7 +43,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v2.11-wip"
+#define PLUGIN_VERSION	"v2.20-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.1.3"
 constexpr uint32_t least_aviutl2_ver_num = 2010300;
@@ -93,6 +93,7 @@ constinit struct Settings {
 
 	struct {
 		decl_prop(bool, layer_follows_focus, false);
+		decl_prop(bool, scroll_follows_focus, false);
 
 		constexpr static std::wstring_view section = L"navigation";
 	} navigation;
@@ -179,6 +180,7 @@ public:
 		read_double	(stretch, length);
 
 		read_bool	(navigation, layer_follows_focus);
+		read_bool	(navigation, scroll_follows_focus);
 
 		read_int	(cursor_undo, queue_size);
 		read_double	(cursor_undo, polling_cooltime);
@@ -210,6 +212,7 @@ public:
 		write_val	(stretch, length, , L"%.3f");
 
 		write_bool	(navigation, layer_follows_focus);
+		write_bool	(navigation, scroll_follows_focus);
 
 		// even though cursor_undo can't change during runtime, save it
 		// so missing .ini file will be fully generated.
@@ -465,6 +468,7 @@ private:
 			stretch_unit_combo,
 
 			layer_focus_check,
+			scroll_focus_check,
 		};
 	};
 	struct prv_mes {
@@ -501,8 +505,9 @@ private:
 			HWND combo = nullptr;
 		} stretch;
 		struct {
-			HWND check = nullptr;
-		} layer_focus{};
+			HWND layer_focus_check = nullptr;
+			HWND scroll_focus_check = nullptr;
+		} navigation{};
 		HFONT gui_font = nullptr;
 		int label_width = -1;
 		bool initialized() const { return gui_font != nullptr; }
@@ -573,7 +578,11 @@ private:
 
 			// layer-focus control.
 			X = margin_1; Y += unit_height_1;
-			X += repos(layer_focus.check, client.right - 2 * margin_1, edit_height, X, Y);
+			X += repos(navigation.layer_focus_check, client.right - 2 * margin_1, edit_height, X, Y);
+
+			// scroll-focus control.
+			X = margin_1; Y += unit_height_1;
+			X += repos(navigation.scroll_focus_check, client.right - 2 * margin_1, edit_height, X, Y);
 		}
 		void size_changed(int width, int height)
 		{
@@ -724,11 +733,18 @@ private:
 			root, id(ctrl_ids::stretch_unit_combo), hinst, nullptr);
 
 		// layer-focus control.
-		ctrl.layer_focus.check = ::CreateWindowExW(
+		ctrl.navigation.layer_focus_check = ::CreateWindowExW(
 			0, WC_BUTTONW, translate(L"オブジェクト選択時にレイヤーも選択"),
 			WS_VISIBLE | WS_CHILD | BS_CHECKBOX | BS_AUTOCHECKBOX,
 			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 			root, id(ctrl_ids::layer_focus_check), hinst, nullptr);
+
+		// scroll-focus control.
+		ctrl.navigation.scroll_focus_check = ::CreateWindowExW(
+			0, WC_BUTTONW, translate(L"オブジェクト選択時にスクロール追従"),
+			WS_VISIBLE | WS_CHILD | BS_CHECKBOX | BS_AUTOCHECKBOX,
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+			root, id(ctrl_ids::scroll_focus_check), hinst, nullptr);
 
 		// set slider properties.
 		::SendMessageW(ctrl.page_rate.slider, TBM_SETRANGE, TRUE, MAKELPARAM(
@@ -746,7 +762,8 @@ private:
 		// set checkbox state.
 		::SendMessageW(ctrl.suppress_shift.check, BM_SETCHECK, settings.search.suppress_shift ? BST_CHECKED : BST_UNCHECKED, 0);
 		::SendMessageW(ctrl.focus_follows.check, BM_SETCHECK, settings.search.focus_follows ? BST_CHECKED : BST_UNCHECKED, 0);
-		::SendMessageW(ctrl.layer_focus.check, BM_SETCHECK, settings.navigation.layer_follows_focus ? BST_CHECKED : BST_UNCHECKED, 0);
+		::SendMessageW(ctrl.navigation.layer_focus_check, BM_SETCHECK, settings.navigation.layer_follows_focus ? BST_CHECKED : BST_UNCHECKED, 0);
+		::SendMessageW(ctrl.navigation.scroll_focus_check, BM_SETCHECK, settings.navigation.scroll_follows_focus ? BST_CHECKED : BST_UNCHECKED, 0);
 
 		// set combo box items and selection.
 		::SendMessageW(ctrl.ignore_layers.combo, CB_ADDSTRING, {}, reinterpret_cast<LPARAM>(translate(L"なし")));
@@ -772,7 +789,8 @@ private:
 			ctrl.stretch.label,
 			ctrl.stretch.combo,
 			ctrl.stretch.edit,
-			ctrl.layer_focus.check,
+			ctrl.navigation.layer_focus_check,
+			ctrl.navigation.scroll_focus_check,
 		}) ::SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(ctrl.gui_font), TRUE);
 
 		// set subclass procedures for tab-navigation.
@@ -785,7 +803,8 @@ private:
 			ctrl.focus_follows.check,
 			ctrl.stretch.edit,
 			ctrl.stretch.combo,
-			ctrl.layer_focus.check,
+			ctrl.navigation.layer_focus_check,
+			ctrl.navigation.scroll_focus_check,
 		}) ::SetWindowSubclass(control, tab_navigation_proc, reinterpret_cast<UINT_PTR>(this), {});
 
 		// initialize the layout.
@@ -1015,10 +1034,19 @@ private:
 	void sync_layer_focus() const
 	{
 		settings.navigation.layer_follows_focus =
-			::SendMessageW(ctrl.layer_focus.check, BM_GETCHECK, 0, 0) == BST_CHECKED;
+			::SendMessageW(ctrl.navigation.layer_focus_check, BM_GETCHECK, 0, 0) == BST_CHECKED;
 
 		// logging.
 		logging::verbose(L"Settings synchronized: settings.navigation.layer_follows_focus.");
+	}
+
+	void sync_scroll_focus() const
+	{
+		settings.navigation.scroll_follows_focus =
+			::SendMessageW(ctrl.navigation.scroll_focus_check, BM_GETCHECK, 0, 0) == BST_CHECKED;
+
+		// logging.
+		logging::verbose(L"Settings synchronized: settings.navigation.scroll_follows_focus.");
 	}
 
 	static LRESULT CALLBACK tab_navigation_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR id, DWORD_PTR data)
@@ -1041,7 +1069,8 @@ private:
 					that->ctrl.focus_follows.check,
 					that->ctrl.stretch.edit,
 					that->ctrl.stretch.combo,
-					that->ctrl.layer_focus.check,
+					that->ctrl.navigation.layer_focus_check,
+					that->ctrl.navigation.scroll_focus_check,
 				};
 				size_t i = std::find(std::begin(controls), std::end(controls), hwnd) - std::begin(controls);
 				if (i >= std::size(controls)) [[unlikely]] break; // not found.
@@ -1237,6 +1266,17 @@ private:
 				case BN_CLICKED:
 				{
 					sync_layer_focus();
+					return 0;
+				}
+				}
+				break;
+			}
+			case ctrl_ids::scroll_focus_check:
+			{
+				switch (HIWORD(wparam)) {
+				case BN_CLICKED:
+				{
+					sync_scroll_focus();
 					return 0;
 				}
 				}
@@ -2233,34 +2273,72 @@ static void toggle_layer_enable(EDIT_SECTION* edit)
 		edit->set_layer_enable(layer, result_state);
 }
 
-static void layer_follow_focus()
+static void follow_focus()
 {
-	if (!settings.navigation.layer_follows_focus) return;
+	if (!settings.navigation.layer_follows_focus && settings.navigation.scroll_follows_focus) return;
 
 	// as changing the selected layer causes an extra rendering, suppress it if possible.
-	// check if the selected layer should change.
-	int const curr_layer = get_edit_info().layer;
-	int target_layer = curr_layer;
-	edit_handle->call_read_section_param(&target_layer, [](void* p_ret, EDIT_SECTION* edit) static
+	// retrieve the current state.
+	auto const curr_info = get_edit_info();
+	OBJECT_LAYER_FRAME target = {
+		.layer = curr_info.layer,
+		.start = curr_info.display_frame_start,
+		.end = curr_info.display_frame_start + curr_info.display_frame_num - 1,
+	};
+	edit_handle->call_read_section_param(&target, [](void* p_ret, EDIT_SECTION* edit) static
 	{
 		// retrieve the layer of the focused object.
 		auto const obj = edit->get_focus_object();
 		if (obj == nullptr) return;
-		int& ret = *static_cast<int*>(p_ret);
-		ret = edit->get_object_layer_frame(obj).layer;
+		auto& ret = *static_cast<OBJECT_LAYER_FRAME*>(p_ret);
+		ret = edit->get_object_layer_frame(obj);
 	});
-	if (curr_layer == target_layer) return;
 
-	// cannot skip changing the selected layer.
+	// check if edit_section is required.
+	int select_layer = curr_info.layer;
+	struct {
+		int layer, frame;
+	} scroll_pos{ curr_info.display_layer_start, curr_info.display_frame_start };
+	if (settings.navigation.layer_follows_focus) {
+		// selected layer.
+		if (curr_info.layer != target.layer) select_layer = target.layer;
+	}
+	if (settings.navigation.scroll_follows_focus) {
+		// scroll position (layer-wise).
+		if (curr_info.display_layer_start > target.layer) scroll_pos.layer = target.layer;
+		else if (curr_info.display_layer_start + curr_info.display_layer_num - 1 < target.layer)
+			scroll_pos.layer = target.layer - curr_info.display_layer_num + 1;
+
+		// scroll position (frame-wise).
+		if (curr_info.display_frame_start > target.end)
+			scroll_pos.frame = std::max(target.end - (curr_info.display_frame_num >> 1), 0);
+		else if (curr_info.display_frame_start + curr_info.display_frame_num - 1 < target.start)
+			scroll_pos.frame = std::max(target.start - (curr_info.display_frame_num >> 1), 0);
+	}
+	if (select_layer == curr_info.layer &&
+		scroll_pos.layer == curr_info.display_layer_start &&
+		scroll_pos.frame == curr_info.display_frame_start) return;
+
+	// cannot skip the edit_section.
 	// as call_edit_section() cannot be called within this callback, post a window message callback to call it.
-	plugin_window.post_callback([](auto target_layer) static
+	struct data {
+		int select_layer;
+		decltype(scroll_pos) scroll_pos;
+	};
+	auto data_ptr = std::make_unique<data>(select_layer, scroll_pos);
+	plugin_window.post_callback([](auto pointer) static
 	{
-		edit_handle->call_edit_section_param(&target_layer, [](void* p_target, EDIT_SECTION* edit) static
+		std::unique_ptr<data> ptr{ reinterpret_cast<data*>(pointer) };
+		edit_handle->call_edit_section_param(ptr.get(), [](void* pointer, EDIT_SECTION* edit) static
 		{
-			int const target = *static_cast<int*>(p_target);
-			edit->set_cursor_layer_frame(target, edit->info->frame);
+			auto const& ptr = reinterpret_cast<data*>(pointer);
+			if (ptr->select_layer != edit->info->layer)
+				edit->set_cursor_layer_frame(ptr->select_layer, edit->info->frame);
+			if (ptr->scroll_pos.layer != edit->info->display_layer_start ||
+				ptr->scroll_pos.frame != edit->info->display_frame_start)
+				edit->set_display_layer_frame(ptr->scroll_pos.layer, ptr->scroll_pos.frame);
 		});
-	}, static_cast<uintptr_t>(target_layer));
+	}, reinterpret_cast<uintptr_t>(data_ptr.release()));
 }
 
 
@@ -2289,7 +2367,7 @@ static void on_update_object(void* param)
 
 static void on_change_focus_object(void* param)
 {
-	layer_follow_focus();
+	follow_focus();
 }
 
 
