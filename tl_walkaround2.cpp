@@ -439,6 +439,28 @@ static std::vector<std::pair<OBJECT_HANDLE, OBJECT_LAYER_FRAME>> get_selected_ob
 	return ret;
 }
 
+// returns the tuple: [layer, frame, do_move].
+static std::tuple<int, int, bool> calc_scroll_pos(EDIT_INFO const& curr_info, OBJECT_LAYER_FRAME const& pos)
+{
+	// calculates the scroll destination so the specified position will be in view.
+	int layer = curr_info.display_layer_start, frame = curr_info.display_frame_start;
+
+	// adjust layer-wise.
+	if (curr_info.display_layer_start > pos.layer) layer = pos.layer;
+	else if (curr_info.display_layer_start + curr_info.display_layer_num - 1 < pos.layer)
+		layer = pos.layer - curr_info.display_layer_num + 1;
+
+	// adjust frame-wise.
+	if (curr_info.display_frame_start > pos.end)
+		frame = std::max(pos.end - (curr_info.display_frame_num >> 1), 0);
+	else if (curr_info.display_frame_start + curr_info.display_frame_num - 1 < pos.start)
+		frame = std::max(pos.start - (curr_info.display_frame_num >> 1), 0);
+
+	return { layer, frame,
+		layer != curr_info.display_layer_start ||
+		frame != curr_info.display_frame_start };
+}
+
 ////////////////////////////////
 // window message handler.
 ////////////////////////////////
@@ -2007,6 +2029,17 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 	}
 	}
 
+	// adjust the scroll if focused object moved.
+	if (settings.navigation.scroll_follows_focus) {
+		auto const focused = edit->get_focus_object();
+		if (std::find_if(targets.begin(), targets.end(), [focused](auto pair) { return pair.first == focused; })
+			!= targets.end()) {
+			auto const [layer, frame, do_move] =
+				calc_scroll_pos(*edit->info, edit->get_object_layer_frame(focused));
+			if (do_move) edit->set_display_layer_frame(layer, frame);
+		}
+	}
+
 	// output an information message.
 	if (moved_count + left_behind > 0) {
 		constexpr std::wstring_view
@@ -2296,28 +2329,14 @@ static void follow_focus()
 
 	// check if edit_section is required.
 	int select_layer = curr_info.layer;
-	struct {
-		int layer, frame;
-	} scroll_pos{ curr_info.display_layer_start, curr_info.display_frame_start };
+	std::tuple<int, int, bool> scroll_pos{ curr_info.display_layer_start, curr_info.display_frame_start, false };
 	if (settings.navigation.layer_follows_focus) {
 		// selected layer.
 		if (curr_info.layer != target.layer) select_layer = target.layer;
 	}
-	if (settings.navigation.scroll_follows_focus) {
-		// scroll position (layer-wise).
-		if (curr_info.display_layer_start > target.layer) scroll_pos.layer = target.layer;
-		else if (curr_info.display_layer_start + curr_info.display_layer_num - 1 < target.layer)
-			scroll_pos.layer = target.layer - curr_info.display_layer_num + 1;
-
-		// scroll position (frame-wise).
-		if (curr_info.display_frame_start > target.end)
-			scroll_pos.frame = std::max(target.end - (curr_info.display_frame_num >> 1), 0);
-		else if (curr_info.display_frame_start + curr_info.display_frame_num - 1 < target.start)
-			scroll_pos.frame = std::max(target.start - (curr_info.display_frame_num >> 1), 0);
-	}
-	if (select_layer == curr_info.layer &&
-		scroll_pos.layer == curr_info.display_layer_start &&
-		scroll_pos.frame == curr_info.display_frame_start) return;
+	if (settings.navigation.scroll_follows_focus)
+		scroll_pos = calc_scroll_pos(curr_info, target);
+	if (select_layer == curr_info.layer && !std::get<2>(scroll_pos)) return;
 
 	// cannot skip the edit_section.
 	// as call_edit_section() cannot be called within this callback, post a window message callback to call it.
@@ -2334,9 +2353,8 @@ static void follow_focus()
 			auto const& ptr = reinterpret_cast<data*>(pointer);
 			if (ptr->select_layer != edit->info->layer)
 				edit->set_cursor_layer_frame(ptr->select_layer, edit->info->frame);
-			if (ptr->scroll_pos.layer != edit->info->display_layer_start ||
-				ptr->scroll_pos.frame != edit->info->display_frame_start)
-				edit->set_display_layer_frame(ptr->scroll_pos.layer, ptr->scroll_pos.frame);
+			if (std::get<2>(ptr->scroll_pos))
+				edit->set_display_layer_frame(std::get<0>(ptr->scroll_pos), std::get<1>(ptr->scroll_pos));
 		});
 	}, reinterpret_cast<uintptr_t>(data_ptr.release()));
 }
