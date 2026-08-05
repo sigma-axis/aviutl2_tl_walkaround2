@@ -43,7 +43,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v2.10"
+#define PLUGIN_VERSION	"v2.11-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.1.3"
 constexpr uint32_t least_aviutl2_ver_num = 2010300;
@@ -1121,23 +1121,14 @@ private:
 			break;
 		}
 		// initialize and re-layout controls.
-		case WM_SHOWWINDOW:
-		{
-			if (wparam == FALSE || ::IsWindowVisible(root) == FALSE) break;
-
-			// fake the parameters.
-			wparam = SIZE_RESTORED;
-			RECT rc;
-			::GetClientRect(root, &rc);
-			lparam = MAKELPARAM(rc.right, rc.bottom);
-			[[fallthrough]];
-		}
 		case WM_SIZE:
 		{
-			if (::IsWindowVisible(root) == FALSE) break;
-			create_window_content();
+			if (::IsWindowVisible(root) != FALSE) 
+				create_window_content();
 
-			ctrl.size_changed(LOWORD(lparam), HIWORD(lparam));
+			if (int const width = LOWORD(lparam), height = HIWORD(lparam);
+				ctrl.initialized() && width > 0 && height > 0)
+				ctrl.size_changed(width, height);
 			return 0;
 		}
 		case WM_DPICHANGED:
