@@ -418,6 +418,16 @@ static constexpr auto find_bpm_grid_at(std::vector<BPM_INFO>& bpm_list, int fram
 		[T = std::max(bpm_list.front().start, t)](BPM_INFO const& info) { return info.start <= T; }) - 1;
 }
 
+static std::vector<int> collect_mark_points(EDIT_SECTION* edit)
+{
+	int const len = edit->get_mark_frame_list(nullptr, 0);
+	if (len <= 0) return {}; // empty.
+	std::vector<int> ret;
+	ret.resize(len);
+	edit->get_mark_frame_list(ret.data(), len);
+	return ret;
+}
+
 static wchar_t const* translate(wchar_t const* text, wchar_t const* section = nullptr)
 {
 	return config_handle->get_language_text(config_handle,
@@ -1840,6 +1850,34 @@ static void shift_bpm_grid_offset(EDIT_SECTION* edit, int frames)
 
 
 ////////////////////////////////
+// marker navigation.
+////////////////////////////////
+static int find_neighbor_mark(std::vector<int> const& marks, int frame, bool forward, int frame_max)
+{
+	auto it = std::partition_point(marks.begin(), marks.end(),
+		[f = forward ? frame + 1 : frame](int m) { return m < f; });
+	if (forward)
+		return it == marks.end() ? frame_max : *it;
+	else
+		return it == marks.begin() ? 0 : *(it - 1);
+}
+
+static void move_to_mark(EDIT_SECTION* edit, bool forward)
+{
+	int const frame = find_neighbor_mark(collect_mark_points(edit),
+		edit->info->frame, forward, edit->info->frame_max);
+	move_frame_wrap(edit, edit->info->layer, frame);
+}
+
+static void scroll_to_mark(EDIT_SECTION* edit, bool forward)
+{
+	int const half_num = edit->info->display_frame_num >> 1;
+	int const frame = find_neighbor_mark(collect_mark_points(edit),
+		edit->info->display_frame_start + half_num, forward, edit->info->frame_max);
+	edit->set_display_layer_frame(edit->info->display_layer_start, std::max(0, frame - half_num));
+}
+
+////////////////////////////////
 // repositioning objects.
 ////////////////////////////////
 enum class Direction {
@@ -2398,6 +2436,16 @@ constexpr struct {
 		move_scene_core(edit, true, false);
 	}
 	},
+	{ L"左のマーク", [](EDIT_SECTION* edit)
+	{
+		move_to_mark(edit, false);
+	}
+	},
+	{ L"右のマーク", [](EDIT_SECTION* edit)
+	{
+		move_to_mark(edit, true);
+	}
+	},
 	{ L"左へ1ページ移動", [](EDIT_SECTION* edit)
 	{
 		move_per_page(edit, -1.0);
@@ -2435,6 +2483,16 @@ constexpr struct {
 	},
 	{ L"タイムラインの中央へ移動", &move_to_timeline_center },
 
+	{ L"左のマークへスクロール", [](EDIT_SECTION* edit)
+	{
+		scroll_to_mark(edit, false);
+	}
+	},
+	{ L"右のマークへスクロール", [](EDIT_SECTION* edit)
+	{
+		scroll_to_mark(edit, true);
+	}
+	},
 	{ L"左へ1ページスクロール", [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_per_page(edit, -1.0);
