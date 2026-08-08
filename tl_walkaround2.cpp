@@ -43,10 +43,10 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v2.22"
+#define PLUGIN_VERSION	"v2.30-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
-#define LEAST_AVIUTL2_VER_STR	"version 2.1.3"
-constexpr uint32_t least_aviutl2_ver_num = 2010300;
+#define LEAST_AVIUTL2_VER_STR	"version 2.1.4"
+constexpr uint32_t least_aviutl2_ver_num = 2010400;
 
 
 ////////////////////////////////
@@ -2126,48 +2126,6 @@ static void duplicate_object_to_right(EDIT_SECTION* edit)
 ////////////////////////////////
 // time stretching operations.
 ////////////////////////////////
-static std::string time_changed_object(EDIT_SECTION* edit, OBJECT_HANDLE obj, int pos_start, int pos_end)
-{
-	auto midpoints = find_midpoints(edit, obj);
-	[[assume(midpoints.size() >= 2)]];
-	if (int const adj_pos_start = std::min(std::max(pos_start, 0), midpoints[1] - 1),
-		adj_pos_end = std::max(pos_end - 1,
-			midpoints[midpoints.size() - 2] + (midpoints.size() == 2 ? 0 : 1));
-		adj_pos_start == midpoints.front() && adj_pos_end == midpoints.back()) return ""; // no change.
-	else {
-		midpoints.front() = adj_pos_start;
-		midpoints.back() = adj_pos_end;
-	}
-
-	size_t data_start, data_end;
-	std::string_view const& alias = edit->get_object_alias(obj);
-	constexpr std::string_view token1 = "\nframe=", token2 = "\n";
-	if (auto const pos = alias.find(token1, 0); pos == alias.npos) return "";
-	else {
-		data_start = pos + token1.size();
-		data_end = std::min(alias.find(token2, data_start), alias.size());
-	}
-
-	std::string ret{};
-	ret.reserve(alias.size() + 32); // up to two integers may change. 32 (>= 11 x 2) is enough.
-
-	// copy the part before the frame data.
-	ret.append(alias.data(), data_start);
-
-	// write comma-separated frame data.
-	for (auto const& f : midpoints) {
-		char buf_frame[16];
-		auto const len = ::sprintf_s(buf_frame, "%d,", f);
-		ret.append(buf_frame, len);
-	}
-	ret.pop_back(); // remove the last comma.
-
-	// copy the part after the frame data.
-	ret.append(alias.data() + data_end, alias.size() - data_end);
-
-	return ret;
-}
-
 static int calc_stretched_frame(int frame, double length, EDIT_INFO const* info)
 {
 	switch (settings.stretch.unit) {
@@ -2182,53 +2140,42 @@ static void stretch_selected_objects(EDIT_SECTION* edit, bool forward, int absol
 {
 	auto targets = get_selected_objects(edit);
 	if (targets.empty()) return; // no operation.
-	int focused_idx = static_cast<int>(std::find_if(targets.begin(), targets.end(),
-		[edit, focused = edit->get_focus_object()](auto const& p) { return p.first == focused; }
-	) - targets.begin());
-	if (focused_idx == targets.size()) focused_idx = -1;
-	// bool was_selected = edit->get_selected_object_num() > 0;
 
 	// then move the starting and ending positions.
 	uint32_t stretched_count = 0;
-	for (auto& [obj, pos] : targets) {
-		int new_start = pos.start, new_end = pos.end + 1;
+	for (auto const& [obj, pos] : targets) {
+		int const cnt_sections = edit->get_object_section_num(obj);
 
 		// stretch the edge.
 		if (forward) {
-			new_end = std::max(
+			int new_end = std::max(
 				absolute_frame >= 0 ? absolute_frame :
-				calc_stretched_frame(new_end, settings.stretch.length, edit->info),
-				new_start + 1);
+				calc_stretched_frame(pos.end + 1, settings.stretch.length, edit->info),
+				cnt_sections <= 1 ? pos.start + 1 :
+				edit->get_object_section_frame(obj, cnt_sections - 1) + 2);
 
 			// hit-test with other objects.
 			auto const [o, s, e] = find_next_obj(edit, pos.layer, pos.end + 2);
 			if (o != nullptr && s < new_end) new_end = s;
+
+			// stretch the end.
+			if (edit->move_object_section(obj, cnt_sections, new_end - 1)) stretched_count++;
 		}
 		else {
-			new_start = std::min(
+			int new_start = std::max(std::min(
 				absolute_frame >= 0 ? absolute_frame :
-				calc_stretched_frame(new_start, -settings.stretch.length, edit->info),
-				new_end - 1);
+				calc_stretched_frame(pos.start, -settings.stretch.length, edit->info),
+				cnt_sections <= 1 ? pos.end :
+				edit->get_object_section_frame(obj, 1) - 1), 0);
 
 			// hit-test with other objects.
 			auto const [o, s, e] = find_prev_obj(edit, pos.layer, pos.start - 1);
 			if (o != nullptr && e > new_start) new_start = e;
+
+			// stretch the start.
+			if (edit->move_object_section(obj, 0, new_start)) stretched_count++;
 		}
-
-		// try constructing a new alias.
-		auto const alias = time_changed_object(edit, obj, new_start, new_end);
-		if (alias.empty()) continue; // cannot stretch.
-
-		// then replace the object with the new alias.
-		edit->delete_object(obj);
-		obj = edit->create_object_from_alias(alias.c_str(), pos.layer, new_start, new_end - 1 - new_start);
-
-		stretched_count++;
 	}
-
-	// restore the focus.
-	if (focused_idx >= 0) edit->set_focus_object(targets[focused_idx].first);
-	// if (was_selected) { /* no means to restore the selection so far (beta47). */ }
 
 	// output an information message.
 	if (stretched_count > 0) {
