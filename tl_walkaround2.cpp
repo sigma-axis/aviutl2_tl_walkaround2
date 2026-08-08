@@ -1869,6 +1869,13 @@ static void move_to_mark(EDIT_SECTION* edit, bool forward)
 	move_frame_wrap(edit, edit->info->layer, frame);
 }
 
+static void move_to_mark_absolute(EDIT_SECTION* edit, int index)
+{
+	auto const marks = collect_mark_points(edit);
+	if (static_cast<size_t>(index) >= marks.size()) return; // invalid.
+	move_frame_wrap(edit, edit->info->layer, marks[index]);
+}
+
 static void scroll_to_mark(EDIT_SECTION* edit, bool forward)
 {
 	int const half_num = edit->info->display_frame_num >> 1;
@@ -1876,6 +1883,47 @@ static void scroll_to_mark(EDIT_SECTION* edit, bool forward)
 		edit->info->display_frame_start + half_num, forward, edit->info->frame_max);
 	edit->set_display_layer_frame(edit->info->display_layer_start, std::max(0, frame - half_num));
 }
+
+static void scroll_to_mark_absolute(EDIT_SECTION* edit, int index)
+{
+	auto const marks = collect_mark_points(edit);
+	if (static_cast<size_t>(index) >= marks.size()) return; // invalid.
+	int const half_num = edit->info->display_frame_num >> 1;
+	edit->set_display_layer_frame(edit->info->display_layer_start, std::max(0, marks[index] - half_num));
+}
+
+static void toggle_unnamed_mark(EDIT_SECTION* edit)
+{
+	auto const marks = collect_mark_points(edit);
+	int const frame = edit->info->frame;
+	auto const it = std::partition_point(marks.begin(), marks.end(), [f = frame](int m) { return m < f; });
+
+	int state;
+	if (it != marks.end() && *it == frame) {
+		auto const name = edit->get_mark_frame_memo(frame);
+		if (name == nullptr || *name == L'\0') {
+			edit->clear_mark_frame(frame);
+			state = 1;
+		}
+		else state = 2;
+	}
+	else {
+		edit->set_mark_frame(frame, nullptr);
+		state = 0;
+	}
+
+	// output an information message.
+	constexpr std::wstring_view pats[] = {
+		L"Created an unnamed mark at %d F.",
+		L"Removed an unnamed mark at %d F.",
+		L"Cannot remove the mark at %d F, because it has a valid name.",
+	};
+	constexpr size_t len_num = std::wstring_view{ L"-2147483648" }.size();
+	wchar_t buf[std::bit_ceil(std::max({ pats[0].size(), pats[1].size(), pats[2].size(), }) + (len_num - 2) + 1)];
+	auto const len = ::swprintf_s(buf, pats[state].data(), frame);
+	logging::info(buf);
+}
+
 
 ////////////////////////////////
 // repositioning objects.
@@ -2446,6 +2494,16 @@ constexpr struct {
 		move_to_mark(edit, true);
 	}
 	},
+	{ L"マークへ移動 (1)", [](EDIT_SECTION* edit) { move_to_mark_absolute(edit, 0); } },
+	{ L"マークへ移動 (2)", [](EDIT_SECTION* edit) { move_to_mark_absolute(edit, 1); } },
+	{ L"マークへ移動 (3)", [](EDIT_SECTION* edit) { move_to_mark_absolute(edit, 2); } },
+	{ L"マークへ移動 (4)", [](EDIT_SECTION* edit) { move_to_mark_absolute(edit, 3); } },
+	{ L"マークへ移動 (5)", [](EDIT_SECTION* edit) { move_to_mark_absolute(edit, 4); } },
+	{ L"マークへ移動 (6)", [](EDIT_SECTION* edit) { move_to_mark_absolute(edit, 5); } },
+	{ L"マークへ移動 (7)", [](EDIT_SECTION* edit) { move_to_mark_absolute(edit, 6); } },
+	{ L"マークへ移動 (8)", [](EDIT_SECTION* edit) { move_to_mark_absolute(edit, 7); } },
+	{ L"マークへ移動 (9)", [](EDIT_SECTION* edit) { move_to_mark_absolute(edit, 8); } },
+	{ L"マークへ移動 (10)", [](EDIT_SECTION* edit) { move_to_mark_absolute(edit, 9); } },
 	{ L"左へ1ページ移動", [](EDIT_SECTION* edit)
 	{
 		move_per_page(edit, -1.0);
@@ -2493,6 +2551,16 @@ constexpr struct {
 		scroll_to_mark(edit, true);
 	}
 	},
+	{ L"マークへスクロール (1)", [](EDIT_SECTION* edit) { scroll_to_mark_absolute(edit, 0); } },
+	{ L"マークへスクロール (2)", [](EDIT_SECTION* edit) { scroll_to_mark_absolute(edit, 1); } },
+	{ L"マークへスクロール (3)", [](EDIT_SECTION* edit) { scroll_to_mark_absolute(edit, 2); } },
+	{ L"マークへスクロール (4)", [](EDIT_SECTION* edit) { scroll_to_mark_absolute(edit, 3); } },
+	{ L"マークへスクロール (5)", [](EDIT_SECTION* edit) { scroll_to_mark_absolute(edit, 4); } },
+	{ L"マークへスクロール (6)", [](EDIT_SECTION* edit) { scroll_to_mark_absolute(edit, 5); } },
+	{ L"マークへスクロール (7)", [](EDIT_SECTION* edit) { scroll_to_mark_absolute(edit, 6); } },
+	{ L"マークへスクロール (8)", [](EDIT_SECTION* edit) { scroll_to_mark_absolute(edit, 7); } },
+	{ L"マークへスクロール (9)", [](EDIT_SECTION* edit) { scroll_to_mark_absolute(edit, 8); } },
+	{ L"マークへスクロール (10)", [](EDIT_SECTION* edit) { scroll_to_mark_absolute(edit, 9); } },
 	{ L"左へ1ページスクロール", [](EDIT_SECTION* edit)
 	{
 		scroll_horiz_per_page(edit, -1.0);
@@ -2710,6 +2778,9 @@ constexpr struct {
 
 	// layer operations menu items.
 	{ L"選択オブジェクトのレイヤーを表示/非表示", &toggle_layer_enable },
+
+	// anonymous mark shortcut.
+	{ L"無名マークを追加/削除", &toggle_unnamed_mark },
 
 	// cursor undo menu items.
 	{ L"カーソル位置を元に戻す", &cursor_undo::undo },
