@@ -1348,14 +1348,14 @@ private:
 ////////////////////////////////
 static std::vector<int> find_midpoints(EDIT_SECTION* edit, OBJECT_HANDLE obj)
 {
-	auto const layer_frame = edit->get_object_layer_frame(obj);
+	auto const [_, start, end] = edit->get_object_layer_frame(obj);
 	int const sz = std::max(edit->get_object_section_num(obj), 1);
 	std::vector<int> ret{}; ret.reserve(static_cast<size_t>(sz + 1));
 
-	ret.push_back(layer_frame.start);
+	ret.push_back(start);
 	for (int i = 1; i < sz; i++)
 		ret.push_back(edit->get_object_section_frame(obj, i));
-	ret.push_back(layer_frame.end + 1);
+	ret.push_back(end + 1);
 	return ret;
 }
 
@@ -1706,9 +1706,9 @@ static void focus_left_right_object(EDIT_SECTION* edit, bool right)
 		target_obj = edit->find_object(edit->info->layer, edit->info->frame);
 	}
 	else {
-		auto const pos = edit->get_object_layer_frame(curr_obj);
-		target_obj = right ? edit->find_object(pos.layer, pos.end + 1) :
-			std::get<0>(find_prev_obj(edit, pos.layer, pos.start - 1));
+		auto const [layer, start, end] = edit->get_object_layer_frame(curr_obj);
+		target_obj = right ? edit->find_object(layer, end + 1) :
+			std::get<0>(find_prev_obj(edit, layer, start - 1));
 	}
 
 	if (target_obj != nullptr) edit->set_focus_object(target_obj);
@@ -1990,12 +1990,12 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 					for (int f = pos.start - ofs; f <= pos.end - ofs; ) {
 						auto const o = edit->find_object(pos.layer, f);
 						if (o == nullptr) break;
-						auto const p = edit->get_object_layer_frame(o);
-						f = p.end + 1;
+						auto const [_, st, ed] = edit->get_object_layer_frame(o);
+						f = ed + 1;
 						if (target_set.contains(o)) continue; // ignore target objects.
-						if (std::max(pos.start - ofs, p.start) <= std::min(pos.end - ofs, p.end)) {
+						if (std::max(pos.start - ofs, st) <= std::min(pos.end - ofs, ed)) {
 							// objects will overlap. find the next candidate.
-							ofs = pos.end + 1 - p.start;
+							ofs = pos.end + 1 - st;
 							break;
 						}
 					}
@@ -2035,8 +2035,8 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 			auto const o = edit->find_object(pos.layer, pos.end + 1);
 			if (o == nullptr) continue;
 			if (target_set.contains(o)) continue; // ignore target objects.
-			auto const p = edit->get_object_layer_frame(o);
-			offset = std::min(offset, p.start - pos.end - 1);
+			auto const [_, st, ed] = edit->get_object_layer_frame(o);
+			offset = std::min(offset, st - ed - 1);
 		}
 
 		if (offset == 0) {
@@ -2047,12 +2047,12 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 					for (int f = pos.start + ofs; f <= pos.end + ofs; ) {
 						auto const o = edit->find_object(pos.layer, f);
 						if (o == nullptr) break;
-						auto const p = edit->get_object_layer_frame(o);
-						f = p.end + 1;
+						auto const [_, st, ed] = edit->get_object_layer_frame(o);
+						f = ed + 1;
 						if (target_set.contains(o)) continue; // ignore target objects.
-						if (std::max(pos.start + ofs, p.start) <= std::min(pos.end + ofs, p.end)) {
+						if (std::max(pos.start + ofs, st) <= std::min(pos.end + ofs, ed)) {
 							// objects will overlap. find the next candidate.
-							ofs = p.end + 1 - pos.start;
+							ofs = ed + 1 - pos.start;
 							// keep searching.
 						}
 					}
@@ -2091,10 +2091,10 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 				for (int f = pos.start; f <= pos.end;) {
 					auto const o = edit->find_object(pos.layer + diff, f);
 					if (o == nullptr) break;
-					auto const p = edit->get_object_layer_frame(o);
-					f = p.end + 1;
+					auto const [_, st, ed] = edit->get_object_layer_frame(o);
+					f = ed + 1;
 					if (target_set.contains(o)) continue; // ignore target objects.
-					if (std::max(pos.start, p.start) <= std::min(pos.end, p.end))
+					if (std::max(pos.start, st) <= std::min(pos.end, ed))
 						goto found_collision_v;
 				}
 			}
@@ -2187,9 +2187,9 @@ static void duplicate_object_to_right(EDIT_SECTION* edit)
 		for (auto const& [_, pos] : targets) {
 			auto const other = edit->find_object(pos.layer, pos.start + cand_offset);
 			if (other == nullptr) continue;
-			auto const other_pos = edit->get_object_layer_frame(other);
-			if (other_pos.start <= pos.end + cand_offset) {
-				cand_offset = other_pos.end + 1 - pos.start;
+			auto const [_, st, ed] = edit->get_object_layer_frame(other);
+			if (st <= pos.end + cand_offset) {
+				cand_offset = ed + 1 - pos.start;
 				goto fail;
 			}
 		}
