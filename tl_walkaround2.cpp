@@ -43,7 +43,7 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v2.30"
+#define PLUGIN_VERSION	"v2.31-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
 #define LEAST_AVIUTL2_VER_STR	"version 2.1.4"
 constexpr uint32_t least_aviutl2_ver_num = 2010400;
@@ -2245,7 +2245,8 @@ static void stretch_selected_objects(EDIT_SECTION* edit, bool forward, int absol
 			if (o != nullptr && s < new_end) new_end = s;
 
 			// stretch the end.
-			if (edit->move_object_section(obj, cnt_sections, new_end - 1)) stretched_count++;
+			if (new_end - 1 != pos.end &&
+				edit->move_object_section(obj, cnt_sections, new_end - 1)) stretched_count++;
 		}
 		else {
 			int new_start = std::max(std::min(
@@ -2259,7 +2260,8 @@ static void stretch_selected_objects(EDIT_SECTION* edit, bool forward, int absol
 			if (o != nullptr && e > new_start) new_start = e;
 
 			// stretch the start.
-			if (edit->move_object_section(obj, 0, new_start)) stretched_count++;
+			if (new_start != pos.start &&
+				edit->move_object_section(obj, 0, new_start)) stretched_count++;
 		}
 	}
 
