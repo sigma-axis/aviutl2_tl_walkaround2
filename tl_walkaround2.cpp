@@ -109,7 +109,7 @@ constinit struct Settings {
 #undef decl_prop
 
 private:
-	std::wstring ini_path() const
+	static std::wstring ini_path()
 	{
 		wchar_t buf[MAX_PATH];
 		::GetModuleFileNameW(dll_hinst, buf, std::size(buf));
@@ -124,17 +124,17 @@ private:
 		return path;
 	}
 	template<size_t N>
-	std::wstring read_ini_string(std::wstring_view const& section, std::wstring_view const& key, std::wstring_view const& default_value, std::wstring const& path) const
+	static std::wstring read_ini_string(std::wstring_view const& section, std::wstring_view const& key, std::wstring_view const& default_value, std::wstring const& path)
 	{
 		wchar_t buf[N];
 		auto len = ::GetPrivateProfileStringW(
 			section.data(), key.data(), default_value.data(),
 			buf, static_cast<DWORD>(std::size(buf)),
-			path.data());
+			path.c_str());
 		return std::wstring{ buf, len };
 	}
 	template<size_t N>
-	void write_ini_value(std::wstring_view const& section, std::wstring_view const& key, auto val, wchar_t const* fmt, std::wstring const& path) const
+	static void write_ini_value(std::wstring_view const& section, std::wstring_view const& key, auto val, wchar_t const* fmt, std::wstring const& path)
 	{
 		wchar_t buf[N];
 		::swprintf_s(buf, fmt, val);
