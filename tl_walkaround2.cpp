@@ -2358,7 +2358,7 @@ static void toggle_layer_enable(EDIT_SECTION* edit)
 
 static void follow_focus()
 {
-	if (!settings.navigation.layer_follows_focus && settings.navigation.scroll_follows_focus) return;
+	if (!settings.navigation.layer_follows_focus && !settings.navigation.scroll_follows_focus) return;
 
 	// as changing the selected layer causes an extra rendering, suppress it if possible.
 	// retrieve the current state.
