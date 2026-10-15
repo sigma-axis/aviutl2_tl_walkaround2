@@ -43,10 +43,10 @@ namespace logging = AviUtl2::logging;
 // plugin info.
 ////////////////////////////////
 #define PLUGIN_NAME		L"TLショトカ移動2"
-#define PLUGIN_VERSION	"v2.31"
+#define PLUGIN_VERSION	"v2.32-wip"
 #define PLUGIN_AUTHOR	L"σ軸"
-#define LEAST_AVIUTL2_VER_STR	"version 2.1.4"
-constexpr uint32_t least_aviutl2_ver_num = 2010400;
+#define LEAST_AVIUTL2_VER_STR	"version 2.1.13"
+constexpr uint32_t least_aviutl2_ver_num = 2011300;
 
 
 ////////////////////////////////
@@ -1976,7 +1976,7 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 				offset = std::min(offset, pos.end + 1 - supposed_current);
 
 			// compare with the adjacent object.
-			auto const [o, s, e] = find_prev_obj(edit, pos.layer, pos.start - 1);
+			auto const [o, _, e] = find_prev_obj(edit, pos.layer, pos.start - 1);
 			if (o == nullptr) continue;
 			if (target_set.contains(o)) continue; // ignore target objects.
 			offset = std::min(offset, pos.start - e);
@@ -2035,8 +2035,8 @@ static void move_selected_objects(EDIT_SECTION* edit, Direction dir)
 			auto const o = edit->find_object(pos.layer, pos.end + 1);
 			if (o == nullptr) continue;
 			if (target_set.contains(o)) continue; // ignore target objects.
-			auto const [_, st, ed] = edit->get_object_layer_frame(o);
-			offset = std::min(offset, st - ed - 1);
+			auto const s = edit->get_object_layer_frame(o).start;
+			offset = std::min(offset, s - pos.end - 1);
 		}
 
 		if (offset == 0) {
