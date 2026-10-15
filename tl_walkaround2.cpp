@@ -2923,7 +2923,7 @@ extern "C" __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host)
 	for (auto const& item : edit_menu_items)
 		host->register_edit_menu(wstr_pool(plugin_name + L"\\" + translate(item.name)), item.callback);
 	for (auto const& item : obj_menu_items)
-		host->register_object_menu(translate(item.name), item.callback);
+		host->register_object_menu(wstr_pool(translate(item.name)), item.callback);
 
 	// register event callbacks.
 	host->register_project_load_handler(&on_load_project);
