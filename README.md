@@ -23,7 +23,7 @@
 
   http://spring-fragrance.mints.ne.jp/aviutl
 
-  - `v2.1.5` で動作確認済み．
+  - `v2.1.13` で動作確認済み．
 
 - Visual C++ 再頒布可能パッケージ (v14 の x64 版が必要)
 
